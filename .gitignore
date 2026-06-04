@@ -1,0 +1,20 @@
+# Node
+node_modules/
+src/leopard-web/dist/
+
+# .NET build output
+bin/
+obj/
+
+# Generated: the UI bundle copied into the host (rebuilt via `npm run build` + copy)
+src/leopard-host/wwwroot/
+
+# Generated sample evidence (tools/make-boxscore.mjs); the app fetches /api/boxscore at runtime
+src/leopard-web/public/voidspire-evidence.md
+
+# Local tooling / editor / OS
+.claude/
+.vs/
+.idea/
+Thumbs.db
+.DS_Store
