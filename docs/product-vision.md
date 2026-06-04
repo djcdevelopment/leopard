@@ -66,3 +66,15 @@ The user story:
 
 > *You already have a gaming PC. You already have raid data. You already have a GPU. You can ask
 > questions of your own data — locally.*
+
+## Validated + sharpened in the field (2026-06-02)
+
+Demoed to guild members in finance, accounting, data science, and engineering. They recognized
+**Shapes** and **Trends** instantly — *"oh, clever"* — confirming the thesis (*make data not scary;
+demystify + empower*) lands with the people who'd know a real one. That validated building Shapes +
+Trends out, and parking Replay's player-display (the leader/guild lens).
+
+It also surfaced the **flagship empowerment surface: the Pipeline Explorer** — the engine made
+visible, the chain above turned into a clickable map with drill-in to real data subsets. It is the
+purest expression of this mission, and Tempo's "make the math touchable" origin intent aimed at
+users. See [feature-order.md](feature-order.md) and [pipeline-explorer.md](pipeline-explorer.md).
