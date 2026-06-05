@@ -41,6 +41,16 @@ string CachePath(string name, DateTime mtimeUtc)
     var safe = string.Join("_", name.Split(Path.GetInvalidFileNameChars()));
     return Path.Combine(cacheDir, $"{safe}__{mtimeUtc.Ticks}.md");
 }
+string TrendsCachePath(string name, DateTime mtimeUtc)
+{
+    var safe = string.Join("_", name.Split(Path.GetInvalidFileNameChars()));
+    return Path.Combine(cacheDir, $"{safe}__{mtimeUtc.Ticks}.trends.json");
+}
+string TraceCachePath(string name, DateTime mtimeUtc)
+{
+    var safe = string.Join("_", name.Split(Path.GetInvalidFileNameChars()));
+    return Path.Combine(cacheDir, $"{safe}__{mtimeUtc.Ticks}.trace.json");
+}
 
 app.MapGet("/api/health", () => Results.Json(new { ok = true, service = "leopard-host" }));
 
@@ -85,10 +95,17 @@ app.MapPost("/api/parse", async (HttpRequest req) =>
         {
             var mtime = File.GetLastWriteTimeUtc(path);
             var cache = CachePath(name, mtime);
-            if (!File.Exists(cache))
+            var trendsCache = TrendsCachePath(name, mtime);
+            var traceCache = TraceCachePath(name, mtime);
+            // One parse feeds every artifact. Re-derive if ANY is missing, so a night parsed
+            // before a surface existed regenerates that surface's artifact on next parse.
+            if (!File.Exists(cache) || !File.Exists(trendsCache) || !File.Exists(traceCache))
             {
                 var parse = ParserPipeline.Parse(path);
                 File.WriteAllText(cache, BoxScore.Build(parse), utf8);
+                File.WriteAllText(trendsCache, TrendsArtifact.BuildJson(parse, json), utf8);
+                // Trace re-walks stages 1–3 for the pre-trim substrate Parse discards.
+                File.WriteAllText(traceCache, PipelineTrace.BuildJson(path, parse, json), utf8);
             }
             results.Add(new { name, ok = true, parsed = true });
         }
@@ -105,6 +122,30 @@ app.MapGet("/api/boxscore", (string name) =>
     var cache = CachePath(name, File.GetLastWriteTimeUtc(path));
     if (!File.Exists(cache)) return Results.NotFound(new { error = "not parsed yet" });
     return Results.Text(File.ReadAllText(cache), "text/markdown");
+});
+
+// Trends artifact (per-encounter rule-row windows + coherence series), computed in-process
+// by TrendsArtifact at parse time. Mirrors /api/boxscore but serves the cached JSON.
+app.MapGet("/api/trends", (string name) =>
+{
+    var cfg = LoadConfig();
+    var path = Path.Combine(cfg.LogDir, name);
+    if (!File.Exists(path)) return Results.NotFound(new { error = "log not found" });
+    var cache = TrendsCachePath(name, File.GetLastWriteTimeUtc(path));
+    if (!File.Exists(cache)) return Results.NotFound(new { error = "not parsed yet" });
+    return Results.Text(File.ReadAllText(cache), "application/json");
+});
+
+// Pipeline trace (per-stage substrate counts + samples + the trim collapse) for the
+// Pipeline Explorer. Computed by PipelineTrace at parse time; served from cache.
+app.MapGet("/api/trace", (string name) =>
+{
+    var cfg = LoadConfig();
+    var path = Path.Combine(cfg.LogDir, name);
+    if (!File.Exists(path)) return Results.NotFound(new { error = "log not found" });
+    var cache = TraceCachePath(name, File.GetLastWriteTimeUtc(path));
+    if (!File.Exists(cache)) return Results.NotFound(new { error = "not parsed yet" });
+    return Results.Text(File.ReadAllText(cache), "application/json");
 });
 
 // Native folder picker — only works in the desktop shell (the WinForms thread owns the dialog).

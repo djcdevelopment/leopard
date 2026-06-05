@@ -14,9 +14,12 @@
     <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.*" />
   </ItemGroup>
 
-  <!-- Leopard depends on the Tempo ENGINE (parser) in-process. Leopard = product, Tempo = engine. -->
+  <!-- Leopard depends on the Tempo ENGINE in-process. Leopard = product, Tempo = engine.
+       Tempo.Core = the parser (ParserPipeline). Tempo.Projections = pure, server-free
+       projection math (Trends / Shape) extracted from Tempo.Host for consumers like us. -->
   <ItemGroup>
     <ProjectReference Include="..\..\..\..\World of Warcraft\tempo\src\Tempo.Core\Tempo.Core.csproj" />
+    <ProjectReference Include="..\..\..\..\World of Warcraft\tempo\src\Tempo.Projections\Tempo.Projections.csproj" />
   </ItemGroup>
 
 </Project>
