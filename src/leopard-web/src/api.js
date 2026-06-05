@@ -31,6 +31,32 @@ export async function getBoxscore(name) {
   return r.text()
 }
 
+// Per-encounter Trends artifact (rule-row windows + coherence series) for a parsed night.
+// 404 means the night was parsed before Trends existed — re-parse it in Setup.
+export async function getTrends(name) {
+  const r = await fetch(`${A}/trends?name=${encodeURIComponent(name)}`)
+  if (r.status === 404) return null
+  if (!r.ok) throw new Error(`trends HTTP ${r.status}`)
+  return r.json()
+}
+
+// Pipeline trace (per-stage substrate counts + samples + trim collapse) for the Explorer.
+// 404 means the night was parsed before the trace existed — re-parse it in Setup.
+export async function getTrace(name) {
+  const r = await fetch(`${A}/trace?name=${encodeURIComponent(name)}`)
+  if (r.status === 404) return null
+  if (!r.ok) throw new Error(`trace HTTP ${r.status}`)
+  return r.json()
+}
+
+// The Roster — all-time career per boss, fanned in across every parsed night. No name
+// argument: it aggregates the whole corpus. Returns { bosses: [...] }.
+export async function getCareer() {
+  const r = await fetch(`${A}/career`)
+  if (!r.ok) throw new Error(`career HTTP ${r.status}`)
+  return r.json()
+}
+
 export async function setConfig(logDir) {
   const r = await fetch(`${A}/config`, {
     method: 'PUT',

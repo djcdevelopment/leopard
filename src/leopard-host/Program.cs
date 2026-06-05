@@ -1,6 +1,7 @@
 using System.Text;
 using System.Text.Json;
 using Tempo.Core.Ingest;
+using Tempo.Host.ViewerApi.Projections;
 using Leopard.Host;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -40,6 +41,21 @@ string CachePath(string name, DateTime mtimeUtc)
 {
     var safe = string.Join("_", name.Split(Path.GetInvalidFileNameChars()));
     return Path.Combine(cacheDir, $"{safe}__{mtimeUtc.Ticks}.md");
+}
+string TrendsCachePath(string name, DateTime mtimeUtc)
+{
+    var safe = string.Join("_", name.Split(Path.GetInvalidFileNameChars()));
+    return Path.Combine(cacheDir, $"{safe}__{mtimeUtc.Ticks}.trends.json");
+}
+string TraceCachePath(string name, DateTime mtimeUtc)
+{
+    var safe = string.Join("_", name.Split(Path.GetInvalidFileNameChars()));
+    return Path.Combine(cacheDir, $"{safe}__{mtimeUtc.Ticks}.trace.json");
+}
+string CareerCachePath(string name, DateTime mtimeUtc)
+{
+    var safe = string.Join("_", name.Split(Path.GetInvalidFileNameChars()));
+    return Path.Combine(cacheDir, $"{safe}__{mtimeUtc.Ticks}.career.json");
 }
 
 app.MapGet("/api/health", () => Results.Json(new { ok = true, service = "leopard-host" }));
@@ -85,10 +101,22 @@ app.MapPost("/api/parse", async (HttpRequest req) =>
         {
             var mtime = File.GetLastWriteTimeUtc(path);
             var cache = CachePath(name, mtime);
-            if (!File.Exists(cache))
+            var trendsCache = TrendsCachePath(name, mtime);
+            var traceCache = TraceCachePath(name, mtime);
+            var careerCache = CareerCachePath(name, mtime);
+            // One parse feeds every artifact. Re-derive if ANY is missing, so a night parsed
+            // before a surface existed regenerates that surface's artifact on next parse.
+            if (!File.Exists(cache) || !File.Exists(trendsCache) || !File.Exists(traceCache) || !File.Exists(careerCache))
             {
                 var parse = ParserPipeline.Parse(path);
                 File.WriteAllText(cache, BoxScore.Build(parse), utf8);
+                File.WriteAllText(trendsCache, TrendsArtifact.BuildJson(parse, json), utf8);
+                // Trace re-walks stages 1–3 for the pre-trim substrate Parse discards.
+                File.WriteAllText(traceCache, PipelineTrace.BuildJson(path, parse, json), utf8);
+                // Career-input: this night's encounters (pull metadata only), the fan-in
+                // substrate the Roster aggregates across nights. Small — no events/replays.
+                File.WriteAllText(careerCache,
+                    JsonSerializer.Serialize(EncountersProjection.ToEncounters(parse.Sessions), json), utf8);
             }
             results.Add(new { name, ok = true, parsed = true });
         }
@@ -105,6 +133,54 @@ app.MapGet("/api/boxscore", (string name) =>
     var cache = CachePath(name, File.GetLastWriteTimeUtc(path));
     if (!File.Exists(cache)) return Results.NotFound(new { error = "not parsed yet" });
     return Results.Text(File.ReadAllText(cache), "text/markdown");
+});
+
+// Trends artifact (per-encounter rule-row windows + coherence series), computed in-process
+// by TrendsArtifact at parse time. Mirrors /api/boxscore but serves the cached JSON.
+app.MapGet("/api/trends", (string name) =>
+{
+    var cfg = LoadConfig();
+    var path = Path.Combine(cfg.LogDir, name);
+    if (!File.Exists(path)) return Results.NotFound(new { error = "log not found" });
+    var cache = TrendsCachePath(name, File.GetLastWriteTimeUtc(path));
+    if (!File.Exists(cache)) return Results.NotFound(new { error = "not parsed yet" });
+    return Results.Text(File.ReadAllText(cache), "application/json");
+});
+
+// Pipeline trace (per-stage substrate counts + samples + the trim collapse) for the
+// Pipeline Explorer. Computed by PipelineTrace at parse time; served from cache.
+app.MapGet("/api/trace", (string name) =>
+{
+    var cfg = LoadConfig();
+    var path = Path.Combine(cfg.LogDir, name);
+    if (!File.Exists(path)) return Results.NotFound(new { error = "log not found" });
+    var cache = TraceCachePath(name, File.GetLastWriteTimeUtc(path));
+    if (!File.Exists(cache)) return Results.NotFound(new { error = "not parsed yet" });
+    return Results.Text(File.ReadAllText(cache), "application/json");
+});
+
+// The Roster — fans in EVERY parsed night's career-input, groups by boss career, and
+// aggregates the all-time roster. Recomputed live (cheap: small per-night JSON) so it
+// always reflects whatever has been parsed. Nights without a career artifact are skipped.
+app.MapGet("/api/career", () =>
+{
+    var cfg = LoadConfig();
+    var all = new List<RaidViewEncounter>();
+    if (Directory.Exists(cfg.LogDir))
+    {
+        foreach (var f in new DirectoryInfo(cfg.LogDir).GetFiles("WoWCombatLog*.txt"))
+        {
+            var cache = CareerCachePath(f.Name, f.LastWriteTimeUtc);
+            if (!File.Exists(cache)) continue;
+            try
+            {
+                var encs = JsonSerializer.Deserialize<List<RaidViewEncounter>>(File.ReadAllText(cache), json);
+                if (encs is not null) all.AddRange(encs);
+            }
+            catch { /* skip a corrupt/old artifact rather than fail the whole roster */ }
+        }
+    }
+    return Results.Text(CareerRoster.BuildJson(all, json), "application/json");
 });
 
 // Native folder picker — only works in the desktop shell (the WinForms thread owns the dialog).
@@ -158,17 +234,30 @@ app.UseStaticFiles();
 
 await app.StartAsync();
 
-// Desktop shell: a maximized WebView2 pointed at the in-process host. WinForms +
-// WebView2 require STA, so the UI runs on its own STA thread; main thread waits.
-var ui = new Thread(() =>
+if (args.Contains("--headless"))
 {
-    System.Windows.Forms.Application.EnableVisualStyles();
-    System.Windows.Forms.Application.SetCompatibleTextRenderingDefault(false);
-    System.Windows.Forms.Application.Run(new MainForm("http://localhost:5280/"));
-});
-ui.SetApartmentState(ApartmentState.STA);
-ui.Start();
-ui.Join();
+    // No desktop shell — just serve the API on :5280 until the process is stopped.
+    // For cache backfills, scripting, and tests; the normal launch opens the window.
+    Console.WriteLine("leopard-host: headless on http://localhost:5280/ (stop with Ctrl+C)");
+    var stop = new TaskCompletionSource();
+    Console.CancelKeyPress += (_, e) => { e.Cancel = true; stop.TrySetResult(); };
+    AppDomain.CurrentDomain.ProcessExit += (_, _) => stop.TrySetResult();
+    await stop.Task;
+}
+else
+{
+    // Desktop shell: a maximized WebView2 pointed at the in-process host. WinForms +
+    // WebView2 require STA, so the UI runs on its own STA thread; main thread waits.
+    var ui = new Thread(() =>
+    {
+        System.Windows.Forms.Application.EnableVisualStyles();
+        System.Windows.Forms.Application.SetCompatibleTextRenderingDefault(false);
+        System.Windows.Forms.Application.Run(new MainForm("http://localhost:5280/"));
+    });
+    ui.SetApartmentState(ApartmentState.STA);
+    ui.Start();
+    ui.Join();
+}
 
 await app.StopAsync();
 
