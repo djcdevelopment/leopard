@@ -234,17 +234,30 @@ app.UseStaticFiles();
 
 await app.StartAsync();
 
-// Desktop shell: a maximized WebView2 pointed at the in-process host. WinForms +
-// WebView2 require STA, so the UI runs on its own STA thread; main thread waits.
-var ui = new Thread(() =>
+if (args.Contains("--headless"))
 {
-    System.Windows.Forms.Application.EnableVisualStyles();
-    System.Windows.Forms.Application.SetCompatibleTextRenderingDefault(false);
-    System.Windows.Forms.Application.Run(new MainForm("http://localhost:5280/"));
-});
-ui.SetApartmentState(ApartmentState.STA);
-ui.Start();
-ui.Join();
+    // No desktop shell — just serve the API on :5280 until the process is stopped.
+    // For cache backfills, scripting, and tests; the normal launch opens the window.
+    Console.WriteLine("leopard-host: headless on http://localhost:5280/ (stop with Ctrl+C)");
+    var stop = new TaskCompletionSource();
+    Console.CancelKeyPress += (_, e) => { e.Cancel = true; stop.TrySetResult(); };
+    AppDomain.CurrentDomain.ProcessExit += (_, _) => stop.TrySetResult();
+    await stop.Task;
+}
+else
+{
+    // Desktop shell: a maximized WebView2 pointed at the in-process host. WinForms +
+    // WebView2 require STA, so the UI runs on its own STA thread; main thread waits.
+    var ui = new Thread(() =>
+    {
+        System.Windows.Forms.Application.EnableVisualStyles();
+        System.Windows.Forms.Application.SetCompatibleTextRenderingDefault(false);
+        System.Windows.Forms.Application.Run(new MainForm("http://localhost:5280/"));
+    });
+    ui.SetApartmentState(ApartmentState.STA);
+    ui.Start();
+    ui.Join();
+}
 
 await app.StopAsync();
 
