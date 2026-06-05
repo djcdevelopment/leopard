@@ -49,6 +49,14 @@ export async function getTrace(name) {
   return r.json()
 }
 
+// The Roster — all-time career per boss, fanned in across every parsed night. No name
+// argument: it aggregates the whole corpus. Returns { bosses: [...] }.
+export async function getCareer() {
+  const r = await fetch(`${A}/career`)
+  if (!r.ok) throw new Error(`career HTTP ${r.status}`)
+  return r.json()
+}
+
 export async function setConfig(logDir) {
   const r = await fetch(`${A}/config`, {
     method: 'PUT',

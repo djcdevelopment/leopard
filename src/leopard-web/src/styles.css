@@ -199,3 +199,31 @@ table.grid tr:hover { background: #15171f; }
 .sampletbl th.num, .sampletbl td.num { text-align: right; font-variant-numeric: tabular-nums; }
 .sampletbl td.accent { color: var(--accent); font-weight: 600; }
 .sampletbl .mono { font-family: Consolas, monospace; font-size: 11.5px; }
+
+/* Roster — all-time career wall */
+.roster .small { margin: 10px 0 14px; }
+.roster .dim { color: #6b7280; }
+.rosterwall { border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+.rw-head, .rw-row {
+  display: grid;
+  grid-template-columns: minmax(180px, 1.6fr) 84px 56px 72px 96px minmax(140px, 1fr);
+  align-items: center; gap: 10px; padding: 9px 14px;
+}
+.rw-head { background: var(--panel); color: var(--muted); font-size: 12px; border-bottom: 1px solid var(--line); }
+.rw-row { width: 100%; background: none; border: none; border-bottom: 1px solid #1d2029; color: var(--ink); cursor: pointer; text-align: left; font: inherit; }
+.rw-row:hover { background: #15171f; }
+.rw-row.open { background: #1a1f17; }
+.rw-row .num { text-align: right; font-variant-numeric: tabular-nums; }
+.rw-row .num.accent { color: var(--accent); font-weight: 600; }
+.rw-boss b { font-weight: 600; }
+.diffbadge { font-size: 10.5px; padding: 1px 7px; border-radius: 10px; border: 1px solid var(--line); color: var(--muted); margin-left: 6px; vertical-align: middle; }
+.diffbadge.mythic { color: #c98bd9; border-color: #4a2d52; }
+.diffbadge.heroic { color: var(--accent); border-color: #4a3d1f; }
+.diffbadge.normal { color: var(--ok); border-color: #2d4a36; }
+.spark.arc { background: #0a0b0e; border: 1px solid var(--line); border-radius: 4px; }
+
+.rw-drill { padding: 14px 16px 18px; background: #101219; border-bottom: 1px solid #1d2029; }
+.rw-stats { display: flex; flex-wrap: wrap; gap: 22px; margin-bottom: 12px; }
+.rw-stat { display: flex; flex-direction: column; }
+.rw-stat .muted { font-size: 12px; }
+.rw-stat b { font-size: 16px; font-variant-numeric: tabular-nums; }
