@@ -217,6 +217,9 @@ table.grid tr:hover { background: #15171f; }
 .projnode.active { border-color: var(--accent); background: #1c1a12; }
 .pn-count { font-variant-numeric: tabular-nums; color: var(--accent); font-weight: 600; }
 
+/* overview-first hint shown until a node is clicked */
+.di-hint { margin: 20px 0 4px; padding: 14px 16px; border: 1px dashed var(--line); border-radius: 8px; text-align: center; }
+
 /* drill-in panel — opens below so the whole map stays in view on the narrow layout */
 .drillin { margin-top: 20px; padding: 16px 18px; background: #101219; border: 1px solid var(--line); border-left: 3px solid var(--accent); border-radius: 8px; }
 .drillin h3 { margin: 0 0 6px; font-size: 16px; }

@@ -5,7 +5,7 @@ const fmt = (n) => (typeof n === 'number' ? n.toLocaleString() : n)
 
 export default function PipelineTab({ night, hasParsed, onOpenTab }) {
   const [trace, setTrace] = useState(null)
-  const [nodeId, setNodeId] = useState('trim') // open the collapse first — it's the payoff
+  const [nodeId, setNodeId] = useState('') // land on the overview; drill in on click
   const [status, setStatus] = useState('') // '' | 'loading' | 'unparsed'
 
   // Re-trace whenever the shared night selection changes.
@@ -20,7 +20,7 @@ export default function PipelineTab({ night, hasParsed, onOpenTab }) {
         if (!t) { setStatus('unparsed'); return }
         setTrace(t)
         setStatus('')
-        setNodeId('trim')
+        setNodeId('') // overview-first on every night change
       })
       .catch(() => { if (alive) setStatus('unparsed') })
     return () => { alive = false }
@@ -77,7 +77,9 @@ export default function PipelineTab({ night, hasParsed, onOpenTab }) {
             ))}
           </div>
 
-          {node && <DrillIn node={node} onOpenTab={onOpenTab} />}
+          {node ? <DrillIn node={node} onOpenTab={onOpenTab} /> : (
+            <p className="muted di-hint">Click any node above to watch your data flow through it — start with <b>Trim</b>, the dramatic collapse.</p>
+          )}
         </>
       )}
     </div>
