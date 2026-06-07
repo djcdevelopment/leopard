@@ -158,12 +158,16 @@ function PullAxis({ points }) {
 }
 
 function MetricRow({ label, series, fmt }) {
-  const last = [...series].reverse().find((v) => typeof v === 'number' && isFinite(v))
+  // The number summarizes the window (mean over the windowed pulls), so it tracks the 4/6/8/10
+  // selector like the sparkline does. (It used to show the latest pull's value, which is the
+  // same pull for every window — so it never changed, contradicting the "Across the window" header.)
+  const finite = series.filter((v) => typeof v === 'number' && isFinite(v))
+  const mean = finite.length ? finite.reduce((a, b) => a + b, 0) / finite.length : null
   return (
     <div className="metric">
       <span className="m-label">{label}</span>
       <Sparkline series={series} />
-      <span className="m-last">{typeof last === 'number' && isFinite(last) ? fmt(last) : '—'}</span>
+      <span className="m-last" title="window average">{mean != null ? fmt(mean) : '—'}</span>
     </div>
   )
 }
