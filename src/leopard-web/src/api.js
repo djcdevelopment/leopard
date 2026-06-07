@@ -49,6 +49,24 @@ export async function getTrace(name) {
   return r.json()
 }
 
+// Shape (density) — per-pull heatmaps for a parsed night. 404 => parsed before Shape existed
+// (re-parse in Setup). Returns { encounters: [{ ..., pulls: [{ pullId, density, ... }] }] }.
+export async function getShapeDensity(name) {
+  const r = await fetch(`${A}/shape/density?name=${encodeURIComponent(name)}`)
+  if (r.status === 404) return null
+  if (!r.ok) throw new Error(`shape density HTTP ${r.status}`)
+  return r.json()
+}
+
+// Shape (kill-vs-wipe) — career-scoped contrast for a boss, fanned across every parsed night.
+// Keyed by careerId (not a single night). 404 => career has no resolvable contrast.
+export async function getShapeWkDelta(careerId) {
+  const r = await fetch(`${A}/shape/wkdelta?careerId=${encodeURIComponent(careerId)}`)
+  if (r.status === 404) return null
+  if (!r.ok) throw new Error(`shape wkdelta HTTP ${r.status}`)
+  return r.json()
+}
+
 // The Roster — all-time career per boss, fanned in across every parsed night. No name
 // argument: it aggregates the whole corpus. Returns { bosses: [...] }.
 export async function getCareer() {

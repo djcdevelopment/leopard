@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react'
 import SetupTab from './SetupTab.jsx'
 import LeopardTab from './LeopardTab.jsx'
 import TrendsTab from './TrendsTab.jsx'
+import ShapeTab from './ShapeTab.jsx'
 import PipelineTab from './PipelineTab.jsx'
 import RosterTab from './RosterTab.jsx'
 import { getLogs } from './api.js'
@@ -64,6 +65,7 @@ export default function App() {
         <button className={tab === 'leopard' ? 'active' : ''} onClick={() => setTab('leopard')}>Leopard</button>
         <button className={tab === 'roster' ? 'active' : ''} onClick={() => setTab('roster')}>Roster</button>
         <button className={tab === 'trends' ? 'active' : ''} onClick={() => setTab('trends')}>Trends</button>
+        <button className={tab === 'shape' ? 'active' : ''} onClick={() => setTab('shape')}>Shape</button>
         <button className={tab === 'pipeline' ? 'active' : ''} onClick={() => setTab('pipeline')}>Pipeline</button>
         <button className={tab === 'setup' ? 'active' : ''} onClick={() => setTab('setup')}>Setup / Configuration</button>
       </nav>
@@ -71,6 +73,7 @@ export default function App() {
       {tab === 'setup' && <SetupTab onParsed={onParsed} onGoToNight={goToNight} />}
       {tab === 'roster' && <RosterTab key={parseNonce} />}
       {tab === 'trends' && <TrendsTab night={selectedNight} hasParsed={hasParsed} />}
+      {tab === 'shape' && <ShapeTab night={selectedNight} hasParsed={hasParsed} />}
       {tab === 'pipeline' && <PipelineTab night={selectedNight} hasParsed={hasParsed} onOpenTab={setTab} />}
       {tab === 'leopard' && <LeopardTab night={selectedNight} hasParsed={hasParsed} />}
 

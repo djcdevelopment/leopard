@@ -157,6 +157,33 @@ table.grid tr:hover { background: #15171f; }
 .metric .m-last { font-variant-numeric: tabular-nums; font-weight: 600; }
 .spark { display: block; }
 
+/* Shape — long-exposure heatmap + career kill-vs-wipe */
+.shape .picker label { color: var(--muted); font-size: 14px; }
+.shape-hero { margin-top: 18px; }
+.shape-hero h3, .shape-wk h3 { font-size: 15px; margin: 0 0 8px; }
+.shape-wk { margin-top: 28px; }
+
+.heatmap { margin: 6px 0 4px; }
+.hm-svg { display: block; border: 1px solid var(--line); border-radius: 8px; background: #0a0b0e; image-rendering: pixelated; }
+.hm-legend { display: flex; align-items: center; gap: 16px; margin-top: 8px; flex-wrap: wrap; }
+.hm-legend span { display: inline-flex; align-items: center; gap: 6px; }
+.hm-swatch { display: inline-block; width: 12px; height: 12px; border-radius: 3px; border: 1px solid var(--line); }
+.hm-swatch.lo { background: rgba(214, 168, 79, 0.18); }
+.hm-swatch.hi { background: var(--accent); }
+.hm-meta { color: #6b7280; margin-left: auto; }
+
+/* career kill-vs-wipe contrast — outcomes, never players */
+.wk { display: flex; flex-direction: column; gap: 1px; background: var(--line); border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+.wk-head, .wk-row { display: grid; grid-template-columns: 1fr auto auto; align-items: baseline; gap: 18px; padding: 10px 16px; background: var(--panel); }
+.wk-head { color: var(--muted); font-size: 12.5px; }
+.wk-rowlabel { color: var(--muted); font-size: 14px; }
+.wk-col { min-width: 96px; text-align: right; font-variant-numeric: tabular-nums; font-size: 16px; font-weight: 600; }
+.wk-head .wk-col { font-size: 12.5px; font-weight: 500; padding: 2px 9px; border-radius: 12px; border: 1px solid var(--line); }
+.wk-head .wk-col.kill { color: var(--ok); border-color: #2d4a36; background: #13201a; }
+.wk-head .wk-col.wipe { color: var(--err); border-color: #4a2d2d; background: #201313; }
+.wk-head .wk-col.one { opacity: 0.7; }
+.wk-note { margin: 8px 2px 0; }
+
 /* Pipeline Explorer */
 .pipeline .small { margin: 10px 0 18px; }
 .pipeline .dim, .di-box .dim, .sampletbl .dim, .pipeline .small .dim { color: #6b7280; }

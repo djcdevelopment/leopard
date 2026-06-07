@@ -60,6 +60,12 @@ string CareerCachePath(string name, DateTime mtimeUtc)
     var safe = string.Join("_", name.Split(Path.GetInvalidFileNameChars()));
     return Path.Combine(cacheDir, $"{safe}__{mtimeUtc.Ticks}.career.json");
 }
+string ShapeCachePath(string name, DateTime mtimeUtc)
+{
+    var safe = string.Join("_", name.Split(Path.GetInvalidFileNameChars()));
+    // v1: per-pull density heatmaps. Version suffix lets a schema bump invalidate via re-parse.
+    return Path.Combine(cacheDir, $"{safe}__{mtimeUtc.Ticks}.shape.v1.json");
+}
 
 app.MapGet("/api/health", () => Results.Json(new { ok = true, service = "leopard-host" }));
 
@@ -107,9 +113,10 @@ app.MapPost("/api/parse", async (HttpRequest req) =>
             var trendsCache = TrendsCachePath(name, mtime);
             var traceCache = TraceCachePath(name, mtime);
             var careerCache = CareerCachePath(name, mtime);
+            var shapeCache = ShapeCachePath(name, mtime);
             // One parse feeds every artifact. Re-derive if ANY is missing, so a night parsed
             // before a surface existed regenerates that surface's artifact on next parse.
-            if (!File.Exists(cache) || !File.Exists(trendsCache) || !File.Exists(traceCache) || !File.Exists(careerCache))
+            if (!File.Exists(cache) || !File.Exists(trendsCache) || !File.Exists(traceCache) || !File.Exists(careerCache) || !File.Exists(shapeCache))
             {
                 var parse = ParserPipeline.Parse(path);
                 File.WriteAllText(cache, BoxScore.Build(parse), utf8);
@@ -120,6 +127,8 @@ app.MapPost("/api/parse", async (HttpRequest req) =>
                 // substrate the Roster aggregates across nights. Small — no events/replays.
                 File.WriteAllText(careerCache,
                     JsonSerializer.Serialize(EncountersProjection.ToEncounters(parse.Sessions), json), utf8);
+                // Shape: per-pull density heatmaps for this night (needs replay frames).
+                File.WriteAllText(shapeCache, ShapeArtifact.BuildJson(parse, json), utf8);
             }
             results.Add(new { name, ok = true, parsed = true });
         }
@@ -160,6 +169,47 @@ app.MapGet("/api/trace", (string name) =>
     var cache = TraceCachePath(name, File.GetLastWriteTimeUtc(path));
     if (!File.Exists(cache)) return Results.NotFound(new { error = "not parsed yet" });
     return Results.Text(File.ReadAllText(cache), "application/json");
+});
+
+// Shape — density heatmaps (per pull, this night), served from the cached per-night artifact.
+// The hero "long-exposure of a pull." 404 => parsed before Shape existed (re-parse in Setup).
+app.MapGet("/api/shape/density", (string name) =>
+{
+    var cfg = LoadConfig();
+    var path = Path.Combine(cfg.LogDir, name);
+    if (!File.Exists(path)) return Results.NotFound(new { error = "log not found" });
+    var cache = ShapeCachePath(name, File.GetLastWriteTimeUtc(path));
+    if (!File.Exists(cache)) return Results.NotFound(new { error = "not parsed yet" });
+    return Results.Text(File.ReadAllText(cache), "application/json");
+});
+
+// Shape — kill-vs-wipe contrast, CAREER-scoped: fanned across every parsed night (like the
+// Roster), because per night a boss is almost always all-kills or all-wipes. Computed live from
+// the small per-night career-input artifacts; `TryBuildWkDelta` resolves the career by careerId.
+app.MapGet("/api/shape/wkdelta", (string careerId) =>
+{
+    if (string.IsNullOrWhiteSpace(careerId)) return Results.BadRequest(new { error = "careerId required" });
+    var cfg = LoadConfig();
+    var all = new List<RaidViewEncounter>();
+    if (Directory.Exists(cfg.LogDir))
+    {
+        foreach (var f in new DirectoryInfo(cfg.LogDir).GetFiles("WoWCombatLog*.txt"))
+        {
+            var cc = CareerCachePath(f.Name, f.LastWriteTimeUtc);
+            if (!File.Exists(cc)) continue;
+            try
+            {
+                var encs = JsonSerializer.Deserialize<List<RaidViewEncounter>>(File.ReadAllText(cc), json);
+                if (encs is not null) all.AddRange(encs);
+            }
+            catch { /* skip a corrupt/old artifact rather than fail the whole contrast */ }
+        }
+    }
+    // Any encounter sharing the careerId anchors the career resolve (fans in every night).
+    var anyId = all.FirstOrDefault(e => string.Equals(e.CareerId, careerId, StringComparison.Ordinal))?.Id;
+    if (anyId is null) return Results.NotFound(new { error = "career not found" });
+    if (!ShapeProjection.TryBuildWkDelta(all, anyId, out var dto)) return Results.NotFound(new { error = "no contrast" });
+    return Results.Json(dto, json);
 });
 
 // The Roster — fans in EVERY parsed night's career-input, groups by boss career, and
