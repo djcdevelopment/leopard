@@ -1,9 +1,10 @@
 import React, { useEffect, useState } from 'react'
 import { getTrace } from './api.js'
+import AskPanel from './AskPanel.jsx'
 
 const fmt = (n) => (typeof n === 'number' ? n.toLocaleString() : n)
 
-export default function PipelineTab({ night, hasParsed, onOpenTab }) {
+export default function PipelineTab({ night, hasParsed, onOpenTab, provider, model }) {
   const [trace, setTrace] = useState(null)
   const [nodeId, setNodeId] = useState('') // land on the overview; drill in on click
   const [status, setStatus] = useState('') // '' | 'loading' | 'unparsed'
@@ -77,7 +78,7 @@ export default function PipelineTab({ night, hasParsed, onOpenTab }) {
             ))}
           </div>
 
-          {node ? <DrillIn node={node} onOpenTab={onOpenTab} /> : (
+          {node ? <DrillIn node={node} onOpenTab={onOpenTab} night={night} hasParsed={hasParsed} provider={provider} model={model} /> : (
             <p className="muted di-hint">Click any node above to watch your data flow through it — start with <b>Trim</b>, the dramatic collapse.</p>
           )}
         </>
@@ -100,8 +101,10 @@ function StageNode({ node, active, onClick }) {
   )
 }
 
-function DrillIn({ node, onOpenTab }) {
+function DrillIn({ node, onOpenTab, night, hasParsed, provider, model }) {
   const isStage = 'countIn' in node
+  const isAsk = node.id === 'boxscore' // the terminus: ask the box score at the end of the chain
+
   return (
     <div className="drillin">
       <h3>{node.title}</h3>
@@ -121,6 +124,23 @@ function DrillIn({ node, onOpenTab }) {
             <span className="dim">{node.emitsLabel}</span>
           </div>
         </div>
+      ) : isAsk ? (
+        // The box-score boundary. Left of here is exact/computed; right is a constrained model
+        // speaking. The pipeline guarantees the numbers going IN, not the words coming OUT — so
+        // this "feeds" Ask, it does not "emit" the answer.
+        <div className="di-ask">
+          <p className="di-boundary muted small">
+            ┄ the boundary ┄ everything left is exact and computed; this <b>feeds</b> the local model,
+            which speaks in words. <b>The pipeline guarantees the numbers going in — not the words coming out.</b>
+          </p>
+          {provider?.status === 'ready'
+            ? <span className="di-modelnote muted small">via {model || 'local model'}</span>
+            : null}
+          <AskPanel provider={provider || { status: 'checking', models: [] }} model={model} night={night} hasParsed={hasParsed} allowZoom={false} />
+          {onOpenTab && (
+            <button className="link di-fulltab" onClick={() => onOpenTab('leopard')}>or open the full Ask tab (career + recent-form zooms) →</button>
+          )}
+        </div>
       ) : (
         <div className="di-io">
           {typeof node.count === 'number' && (
@@ -128,7 +148,7 @@ function DrillIn({ node, onOpenTab }) {
           )}
           {node.tab && (
             <button className="di-open" onClick={() => onOpenTab?.(node.tab)}>
-              Open the {node.tab === 'leopard' ? 'Leopard (Ask)' : node.title} tab →
+              Open the {node.title} tab →
             </button>
           )}
         </div>

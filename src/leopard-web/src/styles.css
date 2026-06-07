@@ -236,6 +236,12 @@ table.grid tr:hover { background: #15171f; }
 .di-arrow { color: var(--accent); font-size: 20px; }
 .di-open { background: var(--accent); color: #1a1205; border: none; border-radius: 8px; padding: 9px 16px; font-weight: 600; cursor: pointer; }
 
+/* Ask at the box-score boundary (Pipeline terminus) */
+.di-ask { margin: 4px 0 2px; }
+.di-boundary { border-top: 1px dashed var(--line); border-bottom: 1px dashed var(--line); padding: 9px 0; margin: 2px 0 10px; line-height: 1.5; }
+.di-modelnote { display: block; margin-bottom: 8px; }
+.di-fulltab { display: inline-block; margin-top: 12px; }
+
 /* samples */
 .di-sample { margin-top: 14px; }
 .rawlines { margin: 4px 0 0; padding: 12px 14px; background: #0a0b0e; border: 1px solid var(--line); border-radius: 6px; font-family: Consolas, monospace; font-size: 12px; line-height: 1.5; color: #c8cdd6; white-space: pre-wrap; word-break: break-all; max-height: 220px; overflow: auto; }
