@@ -6,12 +6,29 @@ import ShapeTab from './ShapeTab.jsx'
 import PipelineTab from './PipelineTab.jsx'
 import RosterTab from './RosterTab.jsx'
 import { getLogs } from './api.js'
+import { detectProvider, loadedModels } from './provider.js'
 
 export default function App() {
   const [tab, setTab] = useState('leopard')
   const [parseNonce, setParseNonce] = useState(0)
   const [parsedLogs, setParsedLogs] = useState([])
   const [selectedNight, setSelectedNight] = useState('')
+  // Provider/model are app-level (detected once per load) so every Ask surface — the Leopard tab
+  // and the Pipeline terminus — shares one selection. See the zoom plan.
+  const [provider, setProvider] = useState({ status: 'checking', models: [] })
+  const [model, setModel] = useState('')
+
+  useEffect(() => {
+    detectProvider().then(async (p) => {
+      setProvider({ status: p.reachable ? 'ready' : 'absent', models: p.models, error: p.error })
+      if (p.reachable && p.models?.length) {
+        const loaded = await loadedModels()
+        const warm = loaded.find((m) => p.models.includes(m))
+        const pref = [/b70/i, /mistral/i, /qwen2\.5[:\-]?14b/i, /:14b/i, /qwen2\.5[:\-]?32b/i, /:32b/i, /instruct/i]
+        setModel(warm || pref.map((re) => p.models.find((m) => re.test(m))).find(Boolean) || p.models[0])
+      }
+    })
+  }, [])
 
   // Single source of truth for the parsed-night list + the chosen night, shared across the
   // night-scoped tabs. Re-fetched whenever a parse completes (parseNonce bump); the selection
@@ -74,8 +91,8 @@ export default function App() {
       {tab === 'roster' && <RosterTab key={parseNonce} />}
       {tab === 'trends' && <TrendsTab night={selectedNight} hasParsed={hasParsed} />}
       {tab === 'shape' && <ShapeTab night={selectedNight} hasParsed={hasParsed} />}
-      {tab === 'pipeline' && <PipelineTab night={selectedNight} hasParsed={hasParsed} onOpenTab={setTab} />}
-      {tab === 'leopard' && <LeopardTab night={selectedNight} hasParsed={hasParsed} />}
+      {tab === 'pipeline' && <PipelineTab night={selectedNight} hasParsed={hasParsed} onOpenTab={setTab} provider={provider} model={model} />}
+      {tab === 'leopard' && <LeopardTab night={selectedNight} hasParsed={hasParsed} provider={provider} model={model} setModel={setModel} />}
 
       <footer className="foot">
         <span>Leopard · a reflection engine</span>
