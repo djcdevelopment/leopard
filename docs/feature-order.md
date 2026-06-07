@@ -44,8 +44,12 @@ across sessions, re-numbers 1..N); the only new pieces are a tiny per-night care
 artifact + a `/api/career` aggregator. The next worked example of the teach-to-author chain.
 
 ### Later
-- **Shape** — the long-exposure fight signature across attempts. *Perspective.* The engine
-  has `ShapeProjection` (same seam as Trends).
+- **Shape** — the long-exposure fight signature. *Perspective.* The engine ships a seven-view
+  `ShapeProjection` suite; **v1 = the density heatmap (where the raid stood, per pull) + the
+  kill-vs-wipe contrast (`wkdelta`)**, with affinity/groups/score/meter deferred and `trend`
+  excluded (Trends owns time-series). Same parse-time-artifact seam as Trends. Design brief (UX
+  hand-off, grounded in the real DTOs): `pipeline-explorer-design-brief.md`'s sibling,
+  `shape-design-brief.md`.
 - The **authoring** surface — making pipeline nodes / projections swappable (the Rack), the
   destination the read-only Explorer is the on-ramp to.
 
