@@ -12,6 +12,7 @@ export default function ShapeTab({ night, hasParsed }) {
   const [data, setData] = useState(null)
   const [encId, setEncId] = useState('')
   const [pullIdx, setPullIdx] = useState(0)
+  const [overlay, setOverlay] = useState(false) // false = single pull, true = all attempts overlaid
   const [status, setStatus] = useState('') // '' | 'loading' | 'unparsed'
   const [wk, setWk] = useState(null)
   const [wkStatus, setWkStatus] = useState('') // '' | 'loading' | 'none'
@@ -43,6 +44,7 @@ export default function ShapeTab({ night, hasParsed }) {
     setWk(null)
     if (!enc) { setWkStatus(''); return }
     setPullIdx(0)
+    setOverlay(false)
     setWkStatus('loading')
     let alive = true
     getShapeWkDelta(enc.careerId)
@@ -61,6 +63,8 @@ export default function ShapeTab({ night, hasParsed }) {
 
   const pulls = enc?.pulls || []
   const pull = pulls[Math.min(pullIdx, pulls.length - 1)] || null
+  const withDensity = pulls.filter((p) => p.density)
+  const aggregate = overlay && withDensity.length > 0 ? sumDensity(withDensity) : null
 
   return (
     <div className="shape">
@@ -86,20 +90,34 @@ export default function ShapeTab({ night, hasParsed }) {
       {enc && (
         <>
           <section className="shape-hero">
-            <h3>Where the raid stood <span className="muted small">— the long-exposure of one pull</span></h3>
-            {pulls.length > 0 && (
-              <div className="picker">
-                <label>Pull:&nbsp;
-                  <select value={Math.min(pullIdx, pulls.length - 1)} onChange={(e) => setPullIdx(Number(e.target.value))}>
-                    {pulls.map((p, i) => (
-                      <option key={p.pullId} value={i}>{pullLabel(p)}{p.hasMovement ? '' : ' · no movement'}</option>
-                    ))}
-                  </select>
-                </label>
+            <h3>Where the raid stood <span className="muted small">— the long-exposure of {overlay ? `${withDensity.length} attempts` : 'one pull'}</span></h3>
+
+            {withDensity.length > 1 && (
+              <div className="wintoggle">
+                <button className={!overlay ? 'active' : ''} onClick={() => setOverlay(false)}>This pull</button>
+                <button className={overlay ? 'active' : ''} onClick={() => setOverlay(true)}>All {withDensity.length} attempts</button>
               </div>
             )}
-            {pull?.density ? <Heatmap d={pull.density} /> : (
-              <p className="muted small">No movement data for this pull — advanced combat logging wasn't on, or no positions were recorded.</p>
+
+            {overlay ? (
+              aggregate ? <Heatmap d={aggregate} /> : <p className="muted small">No movement data to overlay.</p>
+            ) : (
+              <>
+                {pulls.length > 0 && (
+                  <div className="picker">
+                    <label>Pull:&nbsp;
+                      <select value={Math.min(pullIdx, pulls.length - 1)} onChange={(e) => setPullIdx(Number(e.target.value))}>
+                        {pulls.map((p, i) => (
+                          <option key={p.pullId} value={i}>{pullLabel(p)}{p.hasMovement ? '' : ' · no movement'}</option>
+                        ))}
+                      </select>
+                    </label>
+                  </div>
+                )}
+                {pull?.density ? <Heatmap d={pull.density} /> : (
+                  <p className="muted small">No movement data for this pull — advanced combat logging wasn't on, or no positions were recorded.</p>
+                )}
+              </>
             )}
           </section>
 
@@ -124,7 +142,7 @@ function Heatmap({ d }) {
   const W = 420
   const aspect = arenaW > 0 && arenaH > 0 ? arenaH / arenaW : gridH / gridW
   const H = Math.round(W * Math.min(Math.max(aspect, 0.35), 1.2))
-  const thin = totalSamples < THIN_SAMPLES
+  const thin = !d.attempts && totalSamples < THIN_SAMPLES
   return (
     <div className="heatmap">
       <svg width={W} height={H} viewBox={`0 0 ${gridW} ${gridH}`} preserveAspectRatio="none" className="hm-svg">
@@ -140,7 +158,9 @@ function Heatmap({ d }) {
         <span><span className="hm-swatch lo" /> less time</span>
         <span><span className="hm-swatch hi" /> most time</span>
         <span className="hm-meta">
-          ≈{totalSamples.toLocaleString()} position readings · framed to this pull{thin ? ' · thin data' : ''}
+          {d.attempts
+            ? `${d.attempts} attempts overlaid · normalized per pull · ≈${totalSamples.toLocaleString()} readings`
+            : `≈${totalSamples.toLocaleString()} position readings · framed to this pull${thin ? ' · thin data' : ''}`}
         </span>
       </div>
     </div>
@@ -180,6 +200,34 @@ function WkDelta({ wk }) {
       )}
     </div>
   )
+}
+
+// Equal-weight overlay: sum each pull's normalized 0..1 grid cell-by-cell, then renormalize so the
+// busiest aggregate cell is 1.0. Each attempt contributes equally (independent of pull length).
+// Aggregation is in normalized-arena space — faithful for a stable-arena boss, an approximation
+// otherwise (the caption says so). All pulls share gridW x gridH.
+function sumDensity(pulls) {
+  const first = pulls[0].density
+  const n = first.cells.length
+  const sum = new Array(n).fill(0)
+  let totalSamples = 0, aw = 0, ah = 0
+  for (const p of pulls) {
+    const c = p.density.cells
+    for (let i = 0; i < n; i++) sum[i] += c[i] || 0
+    totalSamples += p.density.totalSamples || 0
+    aw += p.density.arenaW || 0
+    ah += p.density.arenaH || 0
+  }
+  const max = Math.max(...sum) || 1
+  return {
+    gridW: first.gridW,
+    gridH: first.gridH,
+    cells: sum.map((v) => v / max),
+    totalSamples,
+    attempts: pulls.length,
+    arenaW: aw / pulls.length,
+    arenaH: ah / pulls.length,
+  }
 }
 
 function pullLabel(p) {
