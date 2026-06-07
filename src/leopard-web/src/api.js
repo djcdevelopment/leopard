@@ -49,6 +49,15 @@ export async function getTrace(name) {
   return r.json()
 }
 
+// Career-arc grounding — one boss's all-time story as exact-figures text (the zoom above the
+// per-night box score). Mirrors getBoxscore. 404 => no such career.
+export async function getCareerSummary(careerId) {
+  const r = await fetch(`${A}/career-summary?careerId=${encodeURIComponent(careerId)}`)
+  if (r.status === 404) return null
+  if (!r.ok) throw new Error(`career-summary HTTP ${r.status}`)
+  return r.text()
+}
+
 // Shape (density) — per-pull heatmaps for a parsed night. 404 => parsed before Shape existed
 // (re-parse in Setup). Returns { encounters: [{ ..., pulls: [{ pullId, density, ... }] }] }.
 export async function getShapeDensity(name) {

@@ -110,6 +110,11 @@ table.grid tr:hover { background: #15171f; }
 .cfg button:hover:not(:disabled) { border-color: var(--accent); }
 .cfg button:disabled { opacity: 0.4; cursor: not-allowed; }
 
+/* Ask zoom selector (this night / a boss's career) */
+.ask-zoom { margin: 14px 0 4px; align-items: center; }
+.ask-zoom .small { margin-right: 2px; }
+.zoom-boss { background: var(--panel); color: var(--ink); border: 1px solid var(--line); border-radius: 6px; padding: 5px 9px; font-size: 13px; margin-left: 6px; }
+
 /* parsed-night picker */
 .picker { margin: 14px 0; }
 .picker select { background: var(--panel); color: var(--ink); border: 1px solid var(--line); border-radius: 6px; padding: 6px 10px; font-size: 14px; }

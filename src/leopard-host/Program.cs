@@ -212,6 +212,33 @@ app.MapGet("/api/shape/wkdelta", (string careerId) =>
     return Results.Json(dto, json);
 });
 
+// Career-arc grounding artifact: one boss's all-time story (the zoom above the per-night box
+// score) as exact-figures text for Ask. Fans the career-inputs across nights and renders via
+// CareerSummary — lets Ask answer "are we getting better at this boss?" from real history.
+app.MapGet("/api/career-summary", (string careerId) =>
+{
+    if (string.IsNullOrWhiteSpace(careerId)) return Results.BadRequest(new { error = "careerId required" });
+    var cfg = LoadConfig();
+    var all = new List<RaidViewEncounter>();
+    if (Directory.Exists(cfg.LogDir))
+    {
+        foreach (var f in new DirectoryInfo(cfg.LogDir).GetFiles("WoWCombatLog*.txt"))
+        {
+            var cc = CareerCachePath(f.Name, f.LastWriteTimeUtc);
+            if (!File.Exists(cc)) continue;
+            try
+            {
+                var encs = JsonSerializer.Deserialize<List<RaidViewEncounter>>(File.ReadAllText(cc), json);
+                if (encs is not null) all.AddRange(encs);
+            }
+            catch { /* skip a corrupt/old artifact rather than fail the summary */ }
+        }
+    }
+    if (!all.Any(e => string.Equals(e.CareerId, careerId, StringComparison.Ordinal)))
+        return Results.NotFound(new { error = "career not found" });
+    return Results.Text(CareerSummary.Build(all, careerId), "text/markdown");
+});
+
 // The Roster — fans in EVERY parsed night's career-input, groups by boss career, and
 // aggregates the all-time roster. Recomputed live (cheap: small per-night JSON) so it
 // always reflects whatever has been parsed. Nights without a career artifact are skipped.
