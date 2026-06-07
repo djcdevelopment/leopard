@@ -109,9 +109,12 @@ table.grid tr:hover { background: #15171f; }
 .cfg button:hover:not(:disabled) { border-color: var(--accent); }
 .cfg button:disabled { opacity: 0.4; cursor: not-allowed; }
 
-/* parsed-night picker (Leopard tab) */
+/* parsed-night picker */
 .picker { margin: 14px 0; }
 .picker select { background: var(--panel); color: var(--ink); border: 1px solid var(--line); border-radius: 6px; padding: 6px 10px; font-size: 14px; }
+.picker label { color: var(--muted); font-size: 14px; }
+/* global raid-night selector — one bar above the tabs (app-wide context, not per-tab) */
+.globalpicker { margin: 16px 0 4px; }
 
 /* evidence panel — exactly what the model is prompted against (Leopard tab) */
 .evidence-panel { margin: 14px 0; border: 1px solid var(--line); border-radius: 8px; background: #101219; padding: 10px 14px; }

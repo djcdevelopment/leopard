@@ -6,10 +6,6 @@ import PipelineTab from './PipelineTab.jsx'
 import RosterTab from './RosterTab.jsx'
 import { getLogs } from './api.js'
 
-// Tabs that reflect a single chosen night share one selection (below). The Roster is
-// corpus-wide and Setup has its own log grid, so neither uses the shared picker.
-const NIGHT_SCOPED = new Set(['leopard', 'trends', 'pipeline'])
-
 export default function App() {
   const [tab, setTab] = useState('leopard')
   const [parseNonce, setParseNonce] = useState(0)
@@ -42,7 +38,6 @@ export default function App() {
     setTab('leopard')
   }, [])
 
-  const showPicker = NIGHT_SCOPED.has(tab) && parsedLogs.length > 0
   const hasParsed = parsedLogs.length > 0
 
   return (
@@ -52,16 +47,11 @@ export default function App() {
         <p className="tagline">Ask your own raid — on your own machine.</p>
       </header>
 
-      <nav className="tabs">
-        <button className={tab === 'leopard' ? 'active' : ''} onClick={() => setTab('leopard')}>Leopard</button>
-        <button className={tab === 'roster' ? 'active' : ''} onClick={() => setTab('roster')}>Roster</button>
-        <button className={tab === 'trends' ? 'active' : ''} onClick={() => setTab('trends')}>Trends</button>
-        <button className={tab === 'pipeline' ? 'active' : ''} onClick={() => setTab('pipeline')}>Pipeline</button>
-        <button className={tab === 'setup' ? 'active' : ''} onClick={() => setTab('setup')}>Setup / Configuration</button>
-      </nav>
-
-      {showPicker && (
-        <div className="picker">
+      {/* Global raid-night context: one selector above the tabs, not repeated inside each tab.
+          Shown whenever any night is parsed; it drives the night-scoped tabs (Leopard / Trends
+          / Pipeline). Roster is all-time and Setup picks its own logs, so they ignore it. */}
+      {hasParsed && (
+        <div className="picker globalpicker">
           <label>Raid night:&nbsp;
             <select value={selectedNight} onChange={(e) => setSelectedNight(e.target.value)}>
               {parsedLogs.map((l) => <option key={l.name} value={l.name}>{l.name} · {l.modified}</option>)}
@@ -69,6 +59,14 @@ export default function App() {
           </label>
         </div>
       )}
+
+      <nav className="tabs">
+        <button className={tab === 'leopard' ? 'active' : ''} onClick={() => setTab('leopard')}>Leopard</button>
+        <button className={tab === 'roster' ? 'active' : ''} onClick={() => setTab('roster')}>Roster</button>
+        <button className={tab === 'trends' ? 'active' : ''} onClick={() => setTab('trends')}>Trends</button>
+        <button className={tab === 'pipeline' ? 'active' : ''} onClick={() => setTab('pipeline')}>Pipeline</button>
+        <button className={tab === 'setup' ? 'active' : ''} onClick={() => setTab('setup')}>Setup / Configuration</button>
+      </nav>
 
       {tab === 'setup' && <SetupTab onParsed={onParsed} onGoToNight={goToNight} />}
       {tab === 'roster' && <RosterTab key={parseNonce} />}
