@@ -77,6 +77,15 @@ export default function SetupTab({ onParsed, onGoToNight }) {
       {err && <p className="err">{err} — is the Leopard host running?</p>}
       {logs && !logs.exists && <p className="err">That folder doesn’t exist. Pick or paste a valid one above.</p>}
 
+      {logs?.logs?.some((l) => !l.parsed) && !busy && (
+        <p className="nudge">
+          {logs.logs.filter((l) => !l.parsed).length} log{logs.logs.filter((l) => !l.parsed).length > 1 ? 's' : ''} not yet parsed —{' '}
+          <button className="link" onClick={() => setSel(new Set(logs.logs.filter((l) => !l.parsed).map((l) => l.name)))}>
+            select {logs.logs.filter((l) => !l.parsed).length > 1 ? 'them all' : 'it'}
+          </button>{' '}and PARSE to add the latest fights.
+        </p>
+      )}
+
       {logs?.logs?.length > 0 && (
         <>
           <div className="gridwrap">

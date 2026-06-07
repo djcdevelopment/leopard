@@ -42,6 +42,7 @@ header h1 { margin: 0; font-size: 28px; }
 .onboarding code { background: #0a0b0e; padding: 2px 6px; border-radius: 5px; color: var(--accent); }
 .onboarding ol { line-height: 2; }
 .link { background: none; border: none; color: var(--accent); cursor: pointer; text-decoration: underline; padding: 0; font: inherit; }
+.nudge { background: #1c1a12; border: 1px solid #4a3d1f; border-radius: 8px; padding: 10px 14px; font-size: 14px; color: var(--ink); margin: 12px 0; }
 
 .evidence { margin: 24px 0 8px; }
 .evidence h2 { font-size: 18px; margin: 0 0 4px; }
