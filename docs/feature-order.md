@@ -36,20 +36,21 @@ pass is still pending.
    stages 1–3 (the `PretrimCounts` path) for the pre-trim substrate `Parse` discards.
    *Authoring is still ahead* — v1 is legibility, the on-ramp (see `pipeline-explorer.md`).
 
-### Next — the Roster (multi-run / multi-boss), see `career-roster.md`
+### Shipped — the Roster (multi-run / multi-boss), see `career-roster.md`
 The career view: every boss this tier as a row — **all-time** kills / best % / attempts /
 direction — with `Heroic` and `Mythic` as **separate careers** (Tempo's `careerId` splits them).
-A **fan-in across runs**: the cross-night math already exists (`CareerProjection` merges a boss
-across sessions, re-numbers 1..N); the only new pieces are a tiny per-night career-input
-artifact + a `/api/career` aggregator. The next worked example of the teach-to-author chain.
+A **fan-in across runs**: `CareerProjection` merges a boss across sessions (re-numbers 1..N); the
+new pieces were a tiny per-night career-input artifact + the `/api/career` aggregator.
+
+### Shipped — Shape (built 2026-06-07)
+The sixth surface. **v1 = density heatmap (where the raid stood, per pull) + a CAREER-scoped
+kill-vs-wipe contrast (`wkdelta`, fanned across nights)**; affinity/groups/score/meter deferred,
+`trend` excluded (Trends owns time-series). Density caches per night (`.shape.v1.json`); wkdelta
+computes live at `/api/shape/wkdelta` from the fanned career inputs. The data check that set this
+scope: per-night a boss is all-kills or all-wipes, but 48/119 careers have both. Brief:
+`shape-design-brief.md`. v2 = the cross-attempt density overlay.
 
 ### Later
-- **Shape** — the long-exposure fight signature. *Perspective.* The engine ships a seven-view
-  `ShapeProjection` suite; **v1 = the density heatmap (where the raid stood, per pull) + the
-  kill-vs-wipe contrast (`wkdelta`)**, with affinity/groups/score/meter deferred and `trend`
-  excluded (Trends owns time-series). Same parse-time-artifact seam as Trends. Design brief (UX
-  hand-off, grounded in the real DTOs): `pipeline-explorer-design-brief.md`'s sibling,
-  `shape-design-brief.md`.
 - The **authoring** surface — making pipeline nodes / projections swappable (the Rack), the
   destination the read-only Explorer is the on-ramp to.
 
