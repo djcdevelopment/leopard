@@ -47,8 +47,11 @@ The sixth surface. **v1 = density heatmap (where the raid stood, per pull) + a C
 kill-vs-wipe contrast (`wkdelta`, fanned across nights)**; affinity/groups/score/meter deferred,
 `trend` excluded (Trends owns time-series). Density caches per night (`.shape.v1.json`); wkdelta
 computes live at `/api/shape/wkdelta` from the fanned career inputs. The data check that set this
-scope: per-night a boss is all-kills or all-wipes, but 48/119 careers have both. Brief:
-`shape-design-brief.md`. v2 = the cross-attempt density overlay.
+scope: per-night a boss is all-kills or all-wipes, but 48/119 careers have both. **v2a shipped**:
+a within-night "all N attempts" overlay (client-side sum of the per-pull grids). Brief:
+`shape-design-brief.md`. *Parked:* the all-time career overlay — normalized-space aggregation
+washes out across nights/rooms; a true career signature needs Tempo raw pre-normalization
+positions (a separate effort), not a quick fan-in.
 
 ### Later
 - The **authoring** surface — making pipeline nodes / projections swappable (the Rack), the
