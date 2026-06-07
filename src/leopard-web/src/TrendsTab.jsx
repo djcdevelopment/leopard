@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react'
-import { getLogs, getTrends } from './api.js'
+import { getTrends } from './api.js'
 
 // Coherence signals the engine computes per pull. Context first (boss %, deaths), then the
 // raid-coordination signals that are the Trends story. Rows with no data anywhere are hidden.
@@ -11,47 +11,41 @@ const METRICS = [
   { key: 'peakSpeed', label: 'Peak speed (yd/s)', fmt: (v) => v.toFixed(1) },
 ]
 
-export default function TrendsTab() {
-  const [parsedLogs, setParsedLogs] = useState([])
-  const [selected, setSelected] = useState('')
+// The selectable recent-window sizes — must match TrendsArtifact.Windows on the server.
+const WINDOW_SIZES = [4, 6, 8, 10]
+
+export default function TrendsTab({ night, hasParsed }) {
   const [data, setData] = useState(null)
   const [encId, setEncId] = useState('')
   const [status, setStatus] = useState('') // '' | 'loading' | 'unparsed'
+  const [winSize, setWinSize] = useState(6)
 
+  // Re-read trends whenever the shared night selection changes.
   useEffect(() => {
-    getLogs()
-      .then((l) => {
-        const parsed = (l.logs || []).filter((x) => x.parsed)
-        setParsedLogs(parsed)
-        if (parsed.length) selectLog(parsed[0].name)
-      })
-      .catch(() => {})
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
-
-  async function selectLog(name) {
-    setSelected(name)
     setData(null)
     setEncId('')
+    if (!night) { setStatus(''); return }
     setStatus('loading')
-    try {
-      const t = await getTrends(name)
-      if (!t) { setStatus('unparsed'); return }
-      setData(t)
-      setStatus('')
-      const encs = t.encounters || []
-      // The in-progress boss is the trend-interesting one; fall back to the first.
-      const def = encs.find((e) => e.inProgress) || encs[0]
-      if (def) setEncId(def.encounterId)
-    } catch {
-      setStatus('unparsed')
-    }
-  }
+    let alive = true
+    getTrends(night)
+      .then((t) => {
+        if (!alive) return
+        if (!t) { setStatus('unparsed'); return }
+        setData(t)
+        setStatus('')
+        const encs = t.encounters || []
+        // The in-progress boss is the trend-interesting one; fall back to the first.
+        const def = encs.find((e) => e.inProgress) || encs[0]
+        if (def) setEncId(def.encounterId)
+      })
+      .catch(() => { if (alive) setStatus('unparsed') })
+    return () => { alive = false }
+  }, [night])
 
   const encounters = data?.encounters || []
   const enc = encounters.find((e) => e.encounterId === encId) || null
 
-  if (parsedLogs.length === 0) {
+  if (!hasParsed) {
     return (
       <div className="trends">
         <p className="muted">No parsed raids yet — go to <b>Setup / Configuration</b>, pick a night, and click <b>PARSE</b>.</p>
@@ -61,14 +55,9 @@ export default function TrendsTab() {
 
   return (
     <div className="trends">
-      <div className="picker">
-        <label>Raid night:&nbsp;
-          <select value={selected} onChange={(e) => selectLog(e.target.value)}>
-            {parsedLogs.map((l) => <option key={l.name} value={l.name}>{l.name} · {l.modified}</option>)}
-          </select>
-        </label>
-        {encounters.length > 0 && (
-          <label>&nbsp;&nbsp;Boss:&nbsp;
+      {encounters.length > 0 && (
+        <div className="picker">
+          <label>Boss:&nbsp;
             <select value={encId} onChange={(e) => setEncId(e.target.value)}>
               {encounters.map((e) => (
                 <option key={e.encounterId} value={e.encounterId}>
@@ -77,25 +66,45 @@ export default function TrendsTab() {
               ))}
             </select>
           </label>
-        )}
-      </div>
+        </div>
+      )}
 
       {status === 'loading' && <p className="muted">Reading trends…</p>}
       {status === 'unparsed' && (
         <p className="muted">This night was parsed before Trends existed — re-parse it in <b>Setup</b> to see its trends.</p>
       )}
-      {enc && <EncounterTrends enc={enc} />}
+      {enc && <EncounterTrends enc={enc} winSize={winSize} setWinSize={setWinSize} />}
     </div>
   )
 }
 
-function EncounterTrends({ enc }) {
-  const rows = enc.window?.ruleRows || []
-  const points = enc.coherence?.points || []
-  const n = enc.window?.windowSize || 0
+function EncounterTrends({ enc, winSize, setWinSize }) {
+  // New artifact: windows/coherences keyed by size. Legacy artifact (parsed before selectable
+  // windows): singular window/coherence fixed at n=6.
+  const hasMulti = enc.windows && typeof enc.windows === 'object'
+  const window = hasMulti ? (enc.windows[winSize] || enc.windows[6]) : enc.window
+  const coherence = hasMulti ? (enc.coherences?.[winSize] ?? enc.coherences?.[6]) : enc.coherence
+
+  const rows = window?.ruleRows || []
+  const points = coherence?.points || []
+  const n = window?.windowSize || 0
 
   return (
     <>
+      {hasMulti ? (
+        <div className="wintoggle">
+          <span className="muted small">Window:</span>
+          {WINDOW_SIZES.map((s) => (
+            <button key={s} className={s === winSize ? 'active' : ''} onClick={() => setWinSize(s)}>{s}</button>
+          ))}
+          <span className="muted small">recent pulls</span>
+        </div>
+      ) : (
+        <p className="muted small">
+          Parsed before selectable windows — re-parse in <b>Setup</b> to compare 4 / 6 / 8 / 10 pulls.
+        </p>
+      )}
+
       <p className="muted small">
         Recent window: last {n} pull{n === 1 ? '' : 's'}
         {enc.pullCount > n ? `, compared with the ${n} before` : ''}. Every figure is computed by

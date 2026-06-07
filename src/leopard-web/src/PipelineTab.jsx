@@ -1,42 +1,32 @@
 import React, { useEffect, useState } from 'react'
-import { getLogs, getTrace } from './api.js'
+import { getTrace } from './api.js'
 
 const fmt = (n) => (typeof n === 'number' ? n.toLocaleString() : n)
 
-export default function PipelineTab({ onOpenTab }) {
-  const [parsedLogs, setParsedLogs] = useState([])
-  const [selected, setSelected] = useState('')
+export default function PipelineTab({ night, hasParsed, onOpenTab }) {
   const [trace, setTrace] = useState(null)
   const [nodeId, setNodeId] = useState('trim') // open the collapse first — it's the payoff
   const [status, setStatus] = useState('') // '' | 'loading' | 'unparsed'
 
+  // Re-trace whenever the shared night selection changes.
   useEffect(() => {
-    getLogs()
-      .then((l) => {
-        const parsed = (l.logs || []).filter((x) => x.parsed)
-        setParsedLogs(parsed)
-        if (parsed.length) selectLog(parsed[0].name)
-      })
-      .catch(() => {})
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
-
-  async function selectLog(name) {
-    setSelected(name)
     setTrace(null)
+    if (!night) { setStatus(''); return }
     setStatus('loading')
-    try {
-      const t = await getTrace(name)
-      if (!t) { setStatus('unparsed'); return }
-      setTrace(t)
-      setStatus('')
-      setNodeId('trim')
-    } catch {
-      setStatus('unparsed')
-    }
-  }
+    let alive = true
+    getTrace(night)
+      .then((t) => {
+        if (!alive) return
+        if (!t) { setStatus('unparsed'); return }
+        setTrace(t)
+        setStatus('')
+        setNodeId('trim')
+      })
+      .catch(() => { if (alive) setStatus('unparsed') })
+    return () => { alive = false }
+  }, [night])
 
-  if (parsedLogs.length === 0) {
+  if (!hasParsed) {
     return (
       <div className="pipeline">
         <p className="muted">No parsed raids yet — go to <b>Setup / Configuration</b>, pick a night, and click <b>PARSE</b>.</p>
@@ -51,14 +41,6 @@ export default function PipelineTab({ onOpenTab }) {
 
   return (
     <div className="pipeline">
-      <div className="picker">
-        <label>Raid night:&nbsp;
-          <select value={selected} onChange={(e) => selectLog(e.target.value)}>
-            {parsedLogs.map((l) => <option key={l.name} value={l.name}>{l.name} · {l.modified}</option>)}
-          </select>
-        </label>
-      </div>
-
       {status === 'loading' && <p className="muted">Tracing your log…</p>}
       {status === 'unparsed' && (
         <p className="muted">This night was parsed before the Pipeline Explorer existed — re-parse it in <b>Setup</b> to trace it.</p>

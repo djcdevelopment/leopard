@@ -7,6 +7,15 @@ import react from '@vitejs/plugin-react'
 // a thin host instead; this proxy is dev-only.
 export default defineConfig({
   plugins: [react()],
+  // Build straight into the host's served wwwroot so the shipped bundle can never drift from
+  // source (the prior failure: a manual `copy dist → wwwroot` step that got skipped). After a
+  // build, still `dotnet build` the host so its staticwebassets manifest picks up the new
+  // content-hashed filenames. `public/voidspire-evidence.md` is re-copied here on every build,
+  // so emptyOutDir is safe.
+  build: {
+    outDir: '../leopard-host/wwwroot',
+    emptyOutDir: true,
+  },
   server: {
     port: 5273,
     strictPort: true,

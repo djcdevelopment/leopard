@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react'
 import { getConfig, getLogs, parseLogs, setConfig, pickFolder } from './api.js'
 
-export default function SetupTab({ onParsed }) {
+export default function SetupTab({ onParsed, onGoToNight }) {
   const [config, setConfigState] = useState(null)
   const [dirInput, setDirInput] = useState('')
   const [logs, setLogs] = useState(null)
@@ -9,6 +9,7 @@ export default function SetupTab({ onParsed }) {
   const [sel, setSel] = useState(() => new Set())
   const [busy, setBusy] = useState(false)
   const [status, setStatus] = useState('')
+  const [lastParsed, setLastParsed] = useState([]) // names parsed in the most recent run — the Ask hand-off
 
   async function refresh() {
     setErr('')
@@ -48,12 +49,13 @@ export default function SetupTab({ onParsed }) {
     setStatus(`Parsing ${sel.size} log${sel.size > 1 ? 's' : ''}… (a big raid can take ~15s each)`)
     try {
       const res = await parseLogs([...sel])
-      const ok = res.results.filter((r) => r.ok).length
+      const okNames = res.results.filter((r) => r.ok).map((r) => r.name)
       const failed = res.results.filter((r) => !r.ok)
-      setStatus(`Parsed ${ok}/${res.results.length}.` + (failed.length ? ` Failed: ${failed.map((f) => f.name + ' (' + f.error + ')').join(', ')}` : ''))
+      setStatus(`Parsed ${okNames.length}/${res.results.length}.` + (failed.length ? ` Failed: ${failed.map((f) => f.name + ' (' + f.error + ')').join(', ')}` : ''))
       setSel(new Set())
+      setLastParsed(okNames)
       await refresh()
-      onParsed?.()
+      onParsed?.(okNames)
     } catch (e) {
       setStatus(`Error: ${e?.message || e}`)
     } finally {
@@ -99,6 +101,12 @@ export default function SetupTab({ onParsed }) {
             <button disabled={!sel.size || busy} onClick={parseSelected}>{busy ? 'Parsing…' : `PARSE${sel.size ? ' ' + sel.size : ''}`}</button>
             <span className="muted">{status}</span>
           </div>
+          {lastParsed.length > 0 && !busy && (
+            <div className="actions">
+              <button onClick={() => onGoToNight?.(lastParsed[0])}>Ask about this night →</button>
+              <span className="muted">{lastParsed.length} night{lastParsed.length > 1 ? 's' : ''} ready — explore in Leopard, Trends, or Pipeline.</span>
+            </div>
+          )}
         </>
       )}
     </div>

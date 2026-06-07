@@ -25,8 +25,10 @@ Both proved a reusable seam: compute an artifact at parse time (in-process via
 pass is still pending.
 1. **Trends** — per-encounter rule-row windows (kills / avg deaths / best progress / pull
    duration, each with a better/worse/flat delta) + per-pull coherence sparklines
-   (followership / entropy / peak speed), via `TrendsProjection`. *Open:* window is `n=6`
-   (Tempo parity); "signals over time" argues for the full arc — folded into the Roster, below.
+   (followership / entropy / peak speed), via `TrendsProjection`. The recent window is now
+   **user-selectable — 4 / 6 / 8 / 10 pulls** (default 6 = Tempo parity), precomputed per size
+   in `TrendsArtifact` at parse time (no recompute on toggle). The full arc still lives in the
+   Roster, below.
 2. **Pipeline Explorer (read-only v1)** — the engine made legible: the real stages
    (lex → classify → segment → trim) with per-stage counts, a real sample at each, and the
    per-pull trim collapse (e.g. 86,426 → 1,876 events), fanning out to projections. The

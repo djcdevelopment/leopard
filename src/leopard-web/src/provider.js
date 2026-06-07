@@ -17,6 +17,20 @@ export async function detectProvider() {
   }
 }
 
+// Models currently resident in the provider (Ollama /api/ps). Used to default the Leopard
+// model picker to whatever is already warm — so the first Ask doesn't trigger a cold load
+// (e.g. the *-b70 model the local-inference runbook warms onto the second card).
+export async function loadedModels() {
+  try {
+    const res = await fetch(`${BASE}/api/ps`, { method: 'GET' })
+    if (!res.ok) return []
+    const data = await res.json()
+    return (data.models || []).map((m) => m.name)
+  } catch {
+    return []
+  }
+}
+
 // Stream a chat completion. Calls onToken(text) for each delta; resolves to the
 // full text. Ollama streams newline-delimited JSON, each line { message:{content}, done }.
 export async function chatStream({ model, messages, onToken, signal, temperature = 0.2 }) {

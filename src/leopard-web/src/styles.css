@@ -124,6 +124,13 @@ table.grid tr:hover { background: #15171f; }
 .trends .picker label { color: var(--muted); font-size: 14px; }
 .trends .small { margin: 6px 0 16px; }
 
+/* selectable recent-window toggle (4 / 6 / 8 / 10 pulls) */
+.wintoggle { display: flex; align-items: center; gap: 6px; margin: 8px 0 2px; }
+.wintoggle .small { margin: 0; }
+.wintoggle button { background: var(--panel); color: var(--ink); border: 1px solid var(--line); border-radius: 6px; min-width: 32px; padding: 4px 10px; cursor: pointer; font-size: 13px; font-variant-numeric: tabular-nums; }
+.wintoggle button:hover { border-color: var(--accent); }
+.wintoggle button.active { border-color: var(--accent); background: #1c1a12; color: var(--accent); font-weight: 600; }
+
 /* rule-row window — the hero: one row per computed signal, with a sentiment delta chip */
 .rulerows { display: flex; flex-direction: column; gap: 1px; background: var(--line); border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
 .rulerow { display: grid; grid-template-columns: 1fr auto auto; align-items: baseline; gap: 16px; padding: 11px 16px; background: var(--panel); }

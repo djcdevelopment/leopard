@@ -54,8 +54,9 @@ dotnet test src/leopard-host.Tests
 # UI hot-reload (optional; proxies /api + /ollama to the host) — http://localhost:5273
 cd src/leopard-web; npm install; npm run dev
 
-# build the shipped UI bundle into the host:
-cd src/leopard-web; npm run build      # then copy dist/* -> ../leopard-host/wwwroot/
+# build the shipped UI bundle into the host (vite outputs straight to wwwroot):
+cd src/leopard-web; npm run build      # -> ../leopard-host/wwwroot
+dotnet build src/leopard-host          # refresh the static-assets manifest for the new asset hashes
 ```
 
 **Requires:** .NET 9 SDK · Node 20+ · local Ollama with a model pulled

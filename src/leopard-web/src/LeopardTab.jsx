@@ -1,45 +1,44 @@
 import React, { useEffect, useState } from 'react'
-import { detectProvider, chatStream } from './provider.js'
-import { getLogs, getBoxscore } from './api.js'
+import { detectProvider, chatStream, loadedModels } from './provider.js'
+import { getBoxscore } from './api.js'
 import { SEEDED_QUESTIONS } from './evidence.js'
 import { buildMessages } from './prompt.js'
 
-export default function LeopardTab() {
+export default function LeopardTab({ night, hasParsed }) {
   const [provider, setProvider] = useState({ status: 'checking', models: [] })
   const [model, setModel] = useState('')
-  const [parsedLogs, setParsedLogs] = useState([])
-  const [selected, setSelected] = useState('')
   const [evidence, setEvidence] = useState('')
   const [question, setQuestion] = useState('')
   const [answer, setAnswer] = useState('')
   const [busy, setBusy] = useState(false)
 
   useEffect(() => {
-    detectProvider().then((p) => {
+    detectProvider().then(async (p) => {
       setProvider({ status: p.reachable ? 'ready' : 'absent', models: p.models, error: p.error })
       if (p.reachable && p.models?.length) {
-        // Default to a capable model for grounding fidelity. The user can switch in the
-        // dropdown; on a 32 GB card, qwen2.5:32b is available and grounds best.
-        const pref = [/qwen2\.5[:\-]?14b/i, /:14b/i, /qwen2\.5[:\-]?32b/i, /:32b/i, /instruct/i]
-        setModel(pref.map((re) => p.models.find((m) => re.test(m))).find(Boolean) || p.models[0])
+        // Prefer a model already resident in the provider (e.g. the warmed *-b70 from the
+        // local-inference runbook) so the first Ask doesn't pay a cold load. Otherwise fall
+        // back to a preference list — local large models first, then a capable qwen.
+        const loaded = await loadedModels()
+        const warm = loaded.find((m) => p.models.includes(m))
+        const pref = [/b70/i, /mistral/i, /qwen2\.5[:\-]?14b/i, /:14b/i, /qwen2\.5[:\-]?32b/i, /:32b/i, /instruct/i]
+        setModel(warm || pref.map((re) => p.models.find((m) => re.test(m))).find(Boolean) || p.models[0])
       }
     })
-    getLogs()
-      .then((l) => {
-        const parsed = (l.logs || []).filter((x) => x.parsed)
-        setParsedLogs(parsed)
-        if (parsed.length) selectLog(parsed[0].name)
-      })
-      .catch(() => {})
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  async function selectLog(name) {
-    setSelected(name)
+  // The box score is the exact text the model is grounded in; re-read it whenever the shared
+  // night selection changes.
+  useEffect(() => {
     setEvidence('')
     setAnswer('')
-    try { setEvidence(await getBoxscore(name)) } catch { setEvidence('') }
-  }
+    if (!night) return
+    let alive = true
+    getBoxscore(night)
+      .then((b) => { if (alive) setEvidence(b) })
+      .catch(() => { if (alive) setEvidence('') })
+    return () => { alive = false }
+  }, [night])
 
   const canAsk = provider.status === 'ready' && !!evidence && !busy
   async function ask(q) {
@@ -61,16 +60,8 @@ export default function LeopardTab() {
     <div className="leopard">
       <ProviderBar provider={provider} model={model} setModel={setModel} />
 
-      {parsedLogs.length === 0 ? (
+      {!hasParsed && (
         <p className="muted">No parsed raids yet — go to <b>Setup / Configuration</b>, pick a night, and click <b>PARSE</b>.</p>
-      ) : (
-        <div className="picker">
-          <label>Raid night:&nbsp;
-            <select value={selected} onChange={(e) => selectLog(e.target.value)}>
-              {parsedLogs.map((l) => <option key={l.name} value={l.name}>{l.name} · {l.modified}</option>)}
-            </select>
-          </label>
-        </div>
       )}
 
       {evidence && (

@@ -13,9 +13,11 @@ namespace Leopard.Host;
 /// </summary>
 public static class TrendsArtifact
 {
-    // Mirror Tempo's own /api/trends default (n ?? 6): the "current" window is the last 6
-    // pulls, compared against the 6 before it — so deltas are meaningful, not always "—".
-    private const int Window = 6;
+    // The user-selectable recent-window sizes. The "current" window is the last N pulls,
+    // compared against the N before it — so deltas are meaningful, not always "—". 6 mirrors
+    // Tempo's own /api/trends default and is the UI default.
+    private static readonly int[] Windows = { 4, 6, 8, 10 };
+    private const int DefaultWindow = 6;
 
     public static string BuildJson(ParseResult parse, JsonSerializerOptions json)
     {
@@ -27,13 +29,26 @@ public static class TrendsArtifact
         {
             // A boss can appear in more than one session in a single log; one card per boss.
             if (!seen.Add(enc.Id)) continue;
-            if (!TrendsProjection.TryBuildTrendsWindow(encounters, enc.Id, Window, out var window))
-                continue;
 
-            object? coherence =
-                TrendsProjection.TryBuildCoherenceWindow(encounters, parse.ReplaysByPullId, enc.Id, Window, out var coh)
-                    ? coh
-                    : null;
+            // Precompute every selectable window up front (the projection is cheap), keyed by
+            // size, so the client toggles between them with no recompute and no re-parse. Same
+            // proven Tempo math as before — just at four sizes instead of one.
+            var windows = new Dictionary<string, object>(StringComparer.Ordinal);
+            var coherences = new Dictionary<string, object?>(StringComparer.Ordinal);
+            foreach (var w in Windows)
+            {
+                if (TrendsProjection.TryBuildTrendsWindow(encounters, enc.Id, w, out var window))
+                    windows[w.ToString()] = window;
+
+                coherences[w.ToString()] =
+                    TrendsProjection.TryBuildCoherenceWindow(encounters, parse.ReplaysByPullId, enc.Id, w, out var coh)
+                        ? coh
+                        : null;
+            }
+
+            // Keep the encounter only if the default window builds — matches the prior behaviour
+            // (skip bosses with no usable trend window).
+            if (!windows.ContainsKey(DefaultWindow.ToString())) continue;
 
             cards.Add(new
             {
@@ -43,8 +58,9 @@ public static class TrendsArtifact
                 kills = enc.Kills,
                 pullCount = enc.Pulls.Count,
                 inProgress = enc.Kills == 0 && enc.Pulls.Count > 0,
-                window,
-                coherence,
+                windows,
+                coherences,
+                defaultWindow = DefaultWindow,
             });
         }
 

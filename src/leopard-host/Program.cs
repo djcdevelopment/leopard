@@ -45,7 +45,10 @@ string CachePath(string name, DateTime mtimeUtc)
 string TrendsCachePath(string name, DateTime mtimeUtc)
 {
     var safe = string.Join("_", name.Split(Path.GetInvalidFileNameChars()));
-    return Path.Combine(cacheDir, $"{safe}__{mtimeUtc.Ticks}.trends.json");
+    // v2: selectable windows (4/6/8/10). The version suffix invalidates v1 single-window
+    // artifacts so an unchanged log re-parses into the new shape (the parse step regenerates
+    // any artifact whose cache file is absent).
+    return Path.Combine(cacheDir, $"{safe}__{mtimeUtc.Ticks}.trends.v2.json");
 }
 string TraceCachePath(string name, DateTime mtimeUtc)
 {
@@ -210,7 +213,10 @@ app.MapPost("/api/pick-folder", () =>
 var ollama = new HttpClient { Timeout = Timeout.InfiniteTimeSpan };
 app.Map("/ollama/{**path}", async (HttpContext ctx, string path) =>
 {
-    var target = $"http://localhost:11434/{path}{ctx.Request.QueryString}";
+    // 127.0.0.1, not "localhost": Ollama binds 127.0.0.1 only, and .NET's HttpClient resolves
+    // "localhost" to ::1 (IPv6) first on Windows — that attempt stalls ~2s and fails before any
+    // IPv4 fallback, which left the UI stuck on "Looking for a local model…".
+    var target = $"http://127.0.0.1:11434/{path}{ctx.Request.QueryString}";
     using var msg = new HttpRequestMessage(new HttpMethod(ctx.Request.Method), target);
     if (HttpMethods.IsPost(ctx.Request.Method) || HttpMethods.IsPut(ctx.Request.Method))
     {
@@ -230,7 +236,21 @@ app.Map("/ollama/{**path}", async (HttpContext ctx, string path) =>
 
 // Ship: serve the built leopard-web bundle (dev serves the UI via Vite instead).
 app.UseDefaultFiles();
-app.UseStaticFiles();
+app.UseStaticFiles(new StaticFileOptions
+{
+    OnPrepareResponse = ctx =>
+    {
+        // The content-hashed asset files (index-<hash>.js/.css) are immutable and safe to cache
+        // forever, but index.html points AT those hashes — if WebView2 caches the HTML it keeps
+        // loading the previous bundle after a rebuild. Force the HTML to always revalidate.
+        if (ctx.File.Name.EndsWith(".html", StringComparison.OrdinalIgnoreCase))
+        {
+            ctx.Context.Response.Headers.CacheControl = "no-store, no-cache, must-revalidate";
+            ctx.Context.Response.Headers.Pragma = "no-cache";
+            ctx.Context.Response.Headers.Expires = "0";
+        }
+    }
+});
 
 await app.StartAsync();
 
