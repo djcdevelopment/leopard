@@ -53,9 +53,30 @@ a within-night "all N attempts" overlay (client-side sum of the per-pull grids).
 washes out across nights/rooms; a true career signature needs Tempo raw pre-normalization
 positions (a separate effort), not a quick fan-in.
 
+### Shipped — Query-builder ensure + compose rungs (built 2026-06-07 / 2026-06-09, branch `inventory-canonical-context`)
+The **ensure rung** locked the `display==send` invariant structurally: `CanonicalContext` is a
+frozen value object where `render()` is **defined in terms of** `serialize()` — the bytes cannot
+drift. Carries `schemaVersion`, `scopeLabel`, `digest{sha256, propertyCount}` from day one.
+18 vitest tests guard it (byte-exact on all 3 zooms, determinism, frozen-value mutation rejection,
+SHA-256 vs Node `crypto`). Alongside: `docs/property-inventory.md` (all 7 artifacts, stable
+versioned IDs `raid.pull.bossEndPctHp@v1` …, every field traced to its C# source line) and
+`docs/query-builder-design-prompt.md` (locked constraints: versioned envelope, canonical
+serialization, graph-first storage, lens framing, provenance, confidence propagation, UserIntent).
+
+The **compose rung v1** (career lens): `lens.js` — a pure function `buildCareerLens(boss, selectedIds)
+→ {xml, displayItems, propertyCount}` over the `CAREER_PALETTE` (9 properties with stable IDs,
+provenance `exact|derived`, and computable confidence). AskPanel now shows a **"Tell Leopard what
+matters" checkbox palette** in career zoom; the evidence panel becomes **"What Leopard knows"** — an
+assembled list the user watches build before asking. The model receives the versioned XML; the user
+sees the same set of properties in human-readable form. Demystification moment: the grounding chain
+is visible and composable, not hidden behind a text blob.
+
+**Deferred to a future session:** night and trend lenses (require structured C# emit alongside the
+current markdown blobs; documented in `docs/property-inventory.md`).
+
 ### Later
 - The **authoring** surface — making pipeline nodes / projections swappable (the Rack), the
-  destination the read-only Explorer is the on-ramp to.
+  destination the read-only Explorer is the on-ramp to. Design prompt: `docs/rack-design-prompt.md`.
 
 ### Parked
 - **Replay (player display).** The leader/guild lens — already built several times in React,

@@ -345,11 +345,14 @@ else
 {
     // Desktop shell: a maximized WebView2 pointed at the in-process host. WinForms +
     // WebView2 require STA, so the UI runs on its own STA thread; main thread waits.
+    // Dev: WebView2 points at Vite (5273) for HMR; Vite proxies /api → 5280 and /ollama → 11434.
+    // Prod: WebView2 points at this host's own static bundle (5280, served from wwwroot).
+    var uiUrl = app.Environment.IsDevelopment() ? "http://localhost:5273/" : "http://localhost:5280/";
     var ui = new Thread(() =>
     {
         System.Windows.Forms.Application.EnableVisualStyles();
         System.Windows.Forms.Application.SetCompatibleTextRenderingDefault(false);
-        System.Windows.Forms.Application.Run(new MainForm("http://localhost:5280/"));
+        System.Windows.Forms.Application.Run(new MainForm(uiUrl));
     });
     ui.SetApartmentState(ApartmentState.STA);
     ui.Start();

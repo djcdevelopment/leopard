@@ -129,6 +129,21 @@ table.grid tr:hover { background: #15171f; }
 .evidence-panel .small { font-size: 12.5px; margin: 8px 0; }
 .boxscore { margin: 6px 0 2px; padding: 12px 14px; background: #0a0b0e; border: 1px solid var(--line); border-radius: 6px; font-family: Consolas, monospace; font-size: 12.5px; line-height: 1.5; color: #c8cdd6; white-space: pre-wrap; max-height: 340px; overflow: auto; }
 
+/* Career lens — property palette + "What Leopard knows" assembled list */
+.career-palette { margin: 8px 0 2px; }
+.career-palette .muted { display: block; margin-bottom: 6px; }
+.career-props { display: flex; flex-wrap: wrap; gap: 6px 14px; }
+.prop-toggle { display: flex; align-items: center; gap: 5px; font-size: 13px; color: var(--ink); cursor: pointer; }
+.prop-toggle input { accent-color: var(--accent); cursor: pointer; }
+
+.lens-summary { list-style: none; margin: 8px 0 6px; padding: 0; }
+.lens-summary li { display: flex; gap: 6px; align-items: baseline; padding: 3px 0; font-size: 13.5px; border-bottom: 1px solid #1a1d24; }
+.lens-summary li:last-child { border-bottom: none; }
+.lens-check { color: var(--accent); font-weight: 700; flex-shrink: 0; }
+
+.raw-context { margin-top: 8px; }
+.raw-context summary { font-size: 12.5px; cursor: pointer; }
+
 /* Trends tab */
 .trends .picker label { color: var(--muted); font-size: 14px; }
 .trends .small { margin: 6px 0 16px; }

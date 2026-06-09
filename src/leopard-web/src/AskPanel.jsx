@@ -1,9 +1,10 @@
 import React, { useEffect, useRef, useState } from 'react'
 import { chatStream } from './provider.js'
-import { getBoxscore, getCareerSummary, getCareer, getTrends } from './api.js'
+import { getBoxscore, getCareer, getTrends } from './api.js'
 import { SEEDED_QUESTIONS } from './evidence.js'
 import { buildMessages } from './prompt.js'
 import { ContextBuilder } from './context.js'
+import { CAREER_PALETTE, CAREER_DEFAULT_IDS, buildCareerLens } from './lens.js'
 
 // The reusable Ask experience, grounded at a chosen ZOOM. Rendered on the Leopard tab (allowZoom,
 // the full front door) and embedded at the Pipeline's terminus (allowZoom=false, night only). The
@@ -17,10 +18,27 @@ export default function AskPanel({ provider, model, night, hasParsed, allowZoom 
   const [trendEncs, setTrendEncs] = useState([]) // this night's boss encounters (trend zoom)
   const [trendId, setTrendId] = useState('')
   const [context, setContext] = useState(null) // CanonicalContext | null
+  // career lens — which properties the user has selected, and their rendered display lines
+  const [selectedCareerProps, setSelectedCareerProps] = useState(CAREER_DEFAULT_IDS)
+  const [displayItems, setDisplayItems] = useState([]) // [{id, label, valueLabel}]
   const [question, setQuestion] = useState('')
   const [answer, setAnswer] = useState('')
   const [busy, setBusy] = useState(false)
   const abortRef = useRef(null)
+  // Track zoom in a ref so the night-change effect can read current zoom without
+  // listing zoom as a dependency (which would cause resets on every zoom switch).
+  const zoomRef = useRef(zoom)
+  useEffect(() => { zoomRef.current = zoom }, [zoom])
+  // Career zoom is all-time, not night-scoped — staying on it when the user picks
+  // a new night leaves stale-feeling data on screen. Snap back to night zoom so
+  // the newly selected log's data is front-and-center.
+  const prevNightRef = useRef(night)
+  useEffect(() => {
+    const prev = prevNightRef.current
+    prevNightRef.current = night
+    if (!prev || prev === night) return
+    if (zoomRef.current === 'career') setZoom('night')
+  }, [night])
 
   useEffect(() => () => abortRef.current?.abort(), [])
 
@@ -44,31 +62,41 @@ export default function AskPanel({ provider, model, night, hasParsed, allowZoom 
       .catch(() => { setTrendEncs([]) })
   }, [zoom, night])
 
-  // Build a CanonicalContext per zoom. render() and serialize() derive from the same bytes —
-  // display==send is structural, not a convention that can silently drift.
+  // Build a CanonicalContext per zoom.
+  // Career zoom: synchronous — builds XML from roster data already in state.
+  // Night/trend: async fetch, then build from the returned blob/enc.
   useEffect(() => {
     setContext(null)
     setAnswer('')
+    setDisplayItems([])
     let alive = true
+
     if (zoom === 'night') {
       if (!night) return
       getBoxscore(night)
         .then((b) => { if (alive) setContext(new ContextBuilder().setText(b, 'this raid night').freeze()) })
         .catch(() => {})
-    } else if (zoom === 'career') {
-      if (!careerId) return
+      return () => { alive = false }
+    }
+
+    if (zoom === 'career') {
+      if (!careerId || careers.length === 0) return
       const boss = careers.find((c) => c.careerId === careerId)
-      const label = boss ? `${boss.name} (${boss.difficulty}) — all-time career` : "this boss's career"
-      getCareerSummary(careerId)
-        .then((t) => { if (alive) setContext(new ContextBuilder().setText(t || '', label).freeze()) })
-        .catch(() => {})
-    } else if (zoom === 'trend') {
+      if (!boss) return
+      const { xml, displayItems: items, propertyCount } = buildCareerLens(boss, selectedCareerProps)
+      const label = `${boss.name} (${boss.difficulty}) — all-time career`
+      setContext(new ContextBuilder().setText(xml, label, propertyCount).freeze())
+      setDisplayItems(items)
+      return
+    }
+
+    if (zoom === 'trend') {
       const enc = trendEncs.find((e) => e.encounterId === trendId)
       if (!enc) return
       setContext(new ContextBuilder().setTrend(enc).freeze())
+      return
     }
-    return () => { alive = false }
-  }, [zoom, night, careerId, careers, trendId, trendEncs])
+  }, [zoom, night, careerId, careers, selectedCareerProps, trendId, trendEncs])
 
   const canAsk = provider.status === 'ready' && !!context && !busy
   async function ask(q) {
@@ -94,9 +122,20 @@ export default function AskPanel({ provider, model, night, hasParsed, allowZoom 
     }
   }
 
+  function toggleCareerProp(id, checked) {
+    setSelectedCareerProps(prev => {
+      const next = new Set(prev)
+      if (checked) next.add(id)
+      else next.delete(id)
+      return next
+    })
+  }
+
   if (!hasParsed) {
     return <p className="muted">No parsed raids yet — go to <b>Setup / Configuration</b>, pick a night, and click <b>PARSE</b>.</p>
   }
+
+  const isCareerComposer = zoom === 'career' && displayItems.length > 0
 
   return (
     <>
@@ -119,12 +158,51 @@ export default function AskPanel({ provider, model, night, hasParsed, allowZoom 
         </div>
       )}
 
+      {/* Career property palette — "Tell Leopard what matters" */}
+      {allowZoom && zoom === 'career' && careers.length > 0 && (
+        <div className="career-palette">
+          <span className="muted small">Tell Leopard what matters:</span>
+          <div className="career-props">
+            {CAREER_PALETTE.map(prop => (
+              <label key={prop.id} className="prop-toggle">
+                <input
+                  type="checkbox"
+                  checked={selectedCareerProps.has(prop.id)}
+                  onChange={e => toggleCareerProp(prop.id, e.target.checked)}
+                />
+                {prop.label}
+              </label>
+            ))}
+          </div>
+        </div>
+      )}
+
       {context && (
         <>
           <details className="evidence-panel" open>
-            <summary>What Leopard reads <span className="muted">— the exact text sent to the model · {context.scopeLabel}</span></summary>
-            <p className="muted small">Distilled from your combat log by the parser into these exact figures. Your question is appended below this — nothing else is sent to the model.</p>
-            {context.render()}
+            <summary>
+              {isCareerComposer ? 'What Leopard knows' : 'What Leopard reads'}
+              <span className="muted"> — {context.scopeLabel}</span>
+            </summary>
+
+            {isCareerComposer ? (
+              <>
+                <ul className="lens-summary">
+                  {displayItems.map(({ id, label, valueLabel }) => (
+                    <li key={id}><span className="lens-check">✓</span> <b>{label}:</b> {valueLabel}</li>
+                  ))}
+                </ul>
+                <details className="raw-context">
+                  <summary className="muted small">Show raw context (XML sent to model)</summary>
+                  <pre className="boxscore">{context.serialize()}</pre>
+                </details>
+              </>
+            ) : (
+              <>
+                <p className="muted small">Distilled from your combat log by the parser into these exact figures. Your question is appended below this — nothing else is sent to the model.</p>
+                {context.render()}
+              </>
+            )}
           </details>
 
           <section className="ask">
