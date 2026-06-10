@@ -53,7 +53,7 @@ a within-night "all N attempts" overlay (client-side sum of the per-pull grids).
 washes out across nights/rooms; a true career signature needs Tempo raw pre-normalization
 positions (a separate effort), not a quick fan-in.
 
-### Shipped — Query-builder ensure + compose rungs (built 2026-06-07 / 2026-06-09, branch `inventory-canonical-context`)
+### Shipped — Query-builder ensure + compose rungs (built 2026-06-07 / 2026-06-09, merged to master 2026-06-10 via PR #1)
 The **ensure rung** locked the `display==send` invariant structurally: `CanonicalContext` is a
 frozen value object where `render()` is **defined in terms of** `serialize()` — the bytes cannot
 drift. Carries `schemaVersion`, `scopeLabel`, `digest{sha256, propertyCount}` from day one.
@@ -74,6 +74,29 @@ is visible and composable, not hidden behind a text blob.
 **Deferred to a future session:** night and trend lenses (require structured C# emit alongside the
 current markdown blobs; documented in `docs/property-inventory.md`).
 
+### Shipped — Live + the RaidUI math port (built 2026-06-09 evening, merged 2026-06-10)
+The seventh surface, in two intertwined strands (13 commits, `0bea285..332843d`):
+
+**Live** — between-pull insight on Tempo's live ingest front. `LiveSession.cs` consumes
+`Tempo.Core.Ingest.FileSystemLogMonitor` in-process (zero Tempo changes): a pull ends →
+three-layer evidence (the pull + tonight's trajectory + the cached all-time career) → pre-generated
+insight on the 2nd B70 (OpenAI-style endpoint, config `liveInferenceUrl`) → **LiveTab**, the expert
+review desk (card + evidence disclosure + two named feedback axes: *useful* / *grounded* + comment).
+Every lifecycle event appends to `live-insight.jsonl` — the replayable eval corpus for the
+critic-loop work, and the file bridge discoverlay tails for over-the-game delivery.
+Brief: `live-insight-design-brief.md`.
+
+**The math port** — the entire RaidUI JS analysis corpus, ported to C# artifact modules in
+leopard-host (ShapeArtifact pattern, RaidUI `__tests__` as parity oracle): `SignalsArtifact`
+(six-signal pack — coverage / spacing / hp-variance / deaths-per-sec / followership / entropy),
+`PullDiff` (this-pull-vs-best diff), `WipeClassifier` (called-wipe gate, fatality tiers, consensus
+inflection — feeds a "called wipe ⇒ don't coach" prompt gate), `CoverageTimeline` (per-healer
+quality + snaps + named-offender attribution), `MovementAffinity` + `CoverageGaps` (group structure),
+`FormationSegments` (movement phases), `PlayerScores` (role-weighted profiles + archetypes),
+`ParticipantMeters`, `PullDivergence`. All feed Live's evidence block and per-night cached
+artifacts (`.signals.v1.json`, `.players.v1.json`, `.affinity.v1.json`). xUnit suite 9 → **62**.
+The RaidUI port audit is **closed** — remaining JS deliberately not ported, with reasons.
+
 ### Later
 - The **authoring** surface — making pipeline nodes / projections swappable (the Rack), the
   destination the read-only Explorer is the on-ramp to. Design prompt: `docs/rack-design-prompt.md`.
@@ -85,5 +108,6 @@ current markdown blobs; documented in `docs/property-inventory.md`).
 
 ## The throughline
 Replay = evidence · Shape = perspective · Trends = context · Ask = exploration ·
-**Pipeline Explorer = how it all connects.** Each drills down to the layer beneath; together
-they teach the chain by *delight*, never by lecture.
+**Pipeline Explorer = how it all connects** · **Live = the loop closing in real time.**
+Each drills down to the layer beneath; together they teach the chain by *delight*, never
+by lecture.
