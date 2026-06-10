@@ -164,6 +164,8 @@ public sealed class LiveSession
                     playerDeaths = 0;
                     creatureHp.Clear();
                     _status = new(true, Path.GetFileName(file), since, now, true, boss, PullsSnapshot());
+                    // The overlay composer hides the insight panel during combat — this is its cue.
+                    AppendJsonl(new { kind = "encounter", v = 1, ts = now, state = "started", boss, difficulty = DifficultyName(difficultyId) });
                     break;
 
                 case EventKind.UnitDied:
