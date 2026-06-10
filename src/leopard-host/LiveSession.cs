@@ -128,9 +128,12 @@ public sealed class LiveSession
         catch { return null; }
     }
 
+    private volatile string? _currentFilePath;
+
     private async Task WatchFileAsync(string file, CancellationToken ct)
     {
         var since = DateTimeOffset.Now;
+        _currentFilePath = file;
         var parser = new CombatLogParser();
         await using var monitor = new FileSystemLogMonitor();
 
@@ -244,22 +247,31 @@ public sealed class LiveSession
 
     private const string SystemPrompt =
         "You are Leopard, a reflection engine for a World of Warcraft raid team. A pull just ended; " +
-        "this is read between pulls, so be brief: 2-3 sentences, then ONE open question worth " +
-        "discussing. Restate only the figures provided - never invent numbers. Momentum over " +
-        "perfection: name improvement as readily as problems. If the evidence shows a trajectory, " +
-        "speak to the trajectory, not just the last pull.";
+        "this is read between pulls, so be brief: 2-4 sentences, then ONE open question worth " +
+        "discussing. Restate only the figures provided - never invent numbers. If GROUP COORDINATION " +
+        "data is present, name the strongest change across the pulls (followership, entropy, peak " +
+        "speed, deaths, boss %) and cite its exact figures. Speak to the trajectory across pulls, " +
+        "not just the last one.";
 
     private async Task GenerateInsightAsync(LivePull pull, CancellationToken ct)
     {
         var insightId = Guid.NewGuid().ToString("N")[..12];
-        var evidence = BuildEvidence(pull);
         var cfg = _config();
         var url = string.IsNullOrWhiteSpace(cfg.LiveInferenceUrl)
             ? "http://127.0.0.1:8080/v1/chat/completions" : cfg.LiveInferenceUrl;
         var model = string.IsNullOrWhiteSpace(cfg.LiveModel) ? "local" : cfg.LiveModel;
 
-        _insight = new("pending", insightId, pull, evidence, null, model, null, null);
+        // Show pending immediately — the projection parse below takes seconds on a long log.
+        _insight = new("pending", insightId, pull, null, null, model, null, null);
         AppendJsonl(new { kind = "insight", v = 1, ts = DateTimeOffset.Now, insightId, pullId = pull.PullId, state = "pending" });
+
+        // v2a: run the REAL parse + projections between pulls. The model narrates the same
+        // followership/entropy/peak-speed figures the Trends tab shows — projection-grade
+        // evidence, not raw-event scalars. Falls back to the v1 layers if the parse fails.
+        var coordination = TryBuildCoordinationText(pull);
+        if (ct.IsCancellationRequested) return;
+        var evidence = BuildEvidence(pull, coordination);
+        _insight = new("pending", insightId, pull, evidence, null, model, null, null);
 
         var started = DateTimeOffset.Now;
         try
@@ -273,7 +285,7 @@ public sealed class LiveSession
                     new { role = "user", content = evidence + "\n\nReflect briefly and end with one question worth raising with the group." },
                 },
                 temperature = 0.4,
-                max_tokens = 220,
+                max_tokens = 300,
                 stream = false,
             }, JsonlOpts);
 
@@ -293,7 +305,7 @@ public sealed class LiveSession
             {
                 kind = "insight", v = 1, ts = DateTimeOffset.Now, insightId, pullId = pull.PullId,
                 state = "ready", evidence, system = SystemPrompt, model, url,
-                @params = new { temperature = 0.4, max_tokens = 220 }, text, latencyMs,
+                @params = new { temperature = 0.4, max_tokens = 300 }, text, latencyMs,
             });
         }
         catch (OperationCanceledException) { /* superseded by a newer pull */ }
@@ -310,38 +322,48 @@ public sealed class LiveSession
     }
 
     /// <summary>
-    /// The three-layer evidence block. This exact string is what the model reads AND what the
-    /// card displays (display==send, same as every other Leopard surface).
+    /// The evidence block. This exact string is what the model reads AND what the card
+    /// displays (display==send, same as every other Leopard surface). When the between-pull
+    /// parse succeeds, the tonight layer is the PROJECTION table (authoritative, all pulls in
+    /// the log); the in-memory observed-live list is only the fallback.
     /// </summary>
-    private string BuildEvidence(LivePull pull)
+    private string BuildEvidence(LivePull pull, string? coordination)
     {
         var sb = new StringBuilder();
         sb.AppendLine($"PULL (just ended): {pull.Boss} ({pull.Difficulty}) - {(pull.Kill ? "KILL" : "WIPE")} " +
                       $"in {FormatDuration(pull.DurationMs)}, {pull.PlayerDeaths} player death(s)" +
                       (pull.BossEndPct is double p && !pull.Kill ? $", boss at ~{p:0.#}% (approximate)." : "."));
 
-        List<LivePull> prior;
-        lock (_stateLock)
-        {
-            prior = _tonight.Where(t => t.Boss == pull.Boss && t.DifficultyId == pull.DifficultyId
-                                        && t.PullId != pull.PullId).ToList();
-        }
-        if (prior.Count > 0)
+        if (coordination is not null)
         {
             sb.AppendLine();
-            sb.AppendLine($"TONIGHT on this boss (observed live; this was pull #{pull.TonightIndex}):");
-            foreach (var t in prior)
-                sb.AppendLine($"  #{t.TonightIndex}: {(t.Kill ? "KILL" : "WIPE")}" +
-                              (t.BossEndPct is double bp && !t.Kill ? $" at {bp:0.#}%" : "") +
-                              $", {t.PlayerDeaths} death(s), {FormatDuration(t.DurationMs)}");
-            var bestPrior = prior.Where(t => !t.Kill && t.BossEndPct is not null).Select(t => t.BossEndPct!.Value)
-                                 .DefaultIfEmpty(double.NaN).Min();
-            if (!double.IsNaN(bestPrior) && !pull.Kill && pull.BossEndPct is double cur2)
-                sb.AppendLine($"  Best before this pull: {bestPrior:0.#}%. This pull: {cur2:0.#}%.");
+            sb.AppendLine(coordination);
         }
         else
         {
-            sb.AppendLine("TONIGHT: first pull observed live on this boss this session.");
+            List<LivePull> prior;
+            lock (_stateLock)
+            {
+                prior = _tonight.Where(t => t.Boss == pull.Boss && t.DifficultyId == pull.DifficultyId
+                                            && t.PullId != pull.PullId).ToList();
+            }
+            if (prior.Count > 0)
+            {
+                sb.AppendLine();
+                sb.AppendLine($"TONIGHT on this boss (observed live; this was pull #{pull.TonightIndex}):");
+                foreach (var t in prior)
+                    sb.AppendLine($"  #{t.TonightIndex}: {(t.Kill ? "KILL" : "WIPE")}" +
+                                  (t.BossEndPct is double bp && !t.Kill ? $" at {bp:0.#}%" : "") +
+                                  $", {t.PlayerDeaths} death(s), {FormatDuration(t.DurationMs)}");
+                var bestPrior = prior.Where(t => !t.Kill && t.BossEndPct is not null).Select(t => t.BossEndPct!.Value)
+                                     .DefaultIfEmpty(double.NaN).Min();
+                if (!double.IsNaN(bestPrior) && !pull.Kill && pull.BossEndPct is double cur2)
+                    sb.AppendLine($"  Best before this pull: {bestPrior:0.#}%. This pull: {cur2:0.#}%.");
+            }
+            else
+            {
+                sb.AppendLine("TONIGHT: first pull observed live on this boss this session.");
+            }
         }
 
         sb.AppendLine();
@@ -350,6 +372,59 @@ public sealed class LiveSession
             ? "ALL-TIME (from parsed nights; tonight not yet included):\n" + career.Trim()
             : "ALL-TIME: no parsed history for this boss yet.");
         return sb.ToString().TrimEnd() + "\n";
+    }
+
+    /// <summary>
+    /// v2a — the projections go live. Parses the live log (the night so far) with the real
+    /// ParserPipeline and renders this boss's coordination table: per-pull followership /
+    /// entropy / peak speed (TrendsProjection — the same proven math the Trends tab shows)
+    /// plus the windowed rule-row deltas. Returns null on any failure (the evidence falls
+    /// back to the observed-live layer; raid night must not care).
+    /// </summary>
+    private string? TryBuildCoordinationText(LivePull pull)
+    {
+        var file = _currentFilePath;
+        if (file is null || !File.Exists(file)) return null;
+        try
+        {
+            var parse = ParserPipeline.Parse(file);
+            var encounters = EncountersProjection.ToEncounters(parse.Sessions);
+
+            // Resolve this boss tonight: prefer name+difficulty; accept a unique name match
+            // (Tempo's difficulty strings and our id-derived names can disagree on dungeons).
+            var byName = encounters.Where(e =>
+                string.Equals(e.Name, pull.Boss, StringComparison.OrdinalIgnoreCase)).ToList();
+            var enc = byName.FirstOrDefault(e =>
+                          string.Equals(e.Difficulty, pull.Difficulty, StringComparison.OrdinalIgnoreCase))
+                      ?? (byName.Count == 1 ? byName[0] : null);
+            if (enc is null) return null;
+
+            var sb = new StringBuilder();
+            if (TrendsProjection.TryBuildCoherenceWindow(encounters, parse.ReplaysByPullId, enc.Id, 10, out var coh)
+                && coh.Points.Count > 0)
+            {
+                sb.AppendLine("GROUP COORDINATION tonight on this boss, per pull (followership 0-1, " +
+                              "higher = moving together; entropy, higher = scattered; peak speed yd/s):");
+                foreach (var pt in coh.Points)
+                {
+                    var line = $"  #{pt.PullN}: {pt.Outcome}, boss {pt.BossEndPctHp:0.#}%, " +
+                               $"{pt.Deaths} deaths, {pt.DurationSec}s";
+                    if (pt.FollowershipMean is double f) line += $", followership {f:0.00}";
+                    if (pt.EntropyMean is double en) line += $", entropy {en:0.00}";
+                    if (pt.PeakSpeed is double ps) line += $", peak speed {ps:0.0}";
+                    sb.AppendLine(line);
+                }
+            }
+            if (TrendsProjection.TryBuildTrendsWindow(encounters, enc.Id, 6, out var win)
+                && win.RuleRows.Count > 0)
+            {
+                sb.AppendLine("RECENT WINDOW vs PREVIOUS (deterministic deltas from the parser):");
+                foreach (var r in win.RuleRows)
+                    sb.AppendLine($"  {r.Label}: {r.Value} ({r.Delta} {r.Dir})");
+            }
+            return sb.Length > 0 ? sb.ToString().TrimEnd() : null;
+        }
+        catch { return null; }
     }
 
     private string? TryBuildCareerText(LivePull pull)
@@ -383,7 +458,9 @@ public sealed class LiveSession
 
     private static string DifficultyName(int? id) => id switch
     {
-        14 => "Normal", 15 => "Heroic", 16 => "Mythic", 17 => "LFR",
+        14 => "Normal", 15 => "Heroic", 16 => "Mythic", 17 => "LFR",          // raid
+        1 => "Normal", 2 => "Heroic", 23 => "Mythic", 8 => "Mythic Keystone", // dungeon
+        24 => "Timewalking",
         null => "Unknown", _ => $"Difficulty {id}",
     };
 
