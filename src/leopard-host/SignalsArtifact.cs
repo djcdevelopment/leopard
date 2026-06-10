@@ -19,7 +19,7 @@ public sealed record SignalAggregatesDto(
     double FragileSec, int SnapCount, int DeathsTotal, int DurationSec);
 
 public sealed record PullSignalsDto(
-    string PullId, int DurationSec, double HealerRangeYd,
+    string PullId, int DurationSec, double HealerRangeYd, int HealerCount,
     IReadOnlyDictionary<string, SignalSeriesDto> Signals,
     IReadOnlyList<SnapDto> Snaps, SignalAggregatesDto Aggregates);
 
@@ -177,7 +177,7 @@ public static class SignalsArtifact
             ["hpVariance"] = new(hpVarianceOut, FindPeak(hpVarianceOut, max: true), ""),
         };
 
-        return new PullSignalsDto(replay.PullId, totalSec, healerRangeYd, signals, snaps, aggregates);
+        return new PullSignalsDto(replay.PullId, totalSec, healerRangeYd, healerIdxs.Count, signals, snaps, aggregates);
     }
 
     /// <summary>Per-night artifact: one card per boss, one signals block per pull with replay

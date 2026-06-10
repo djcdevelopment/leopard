@@ -251,7 +251,8 @@ public sealed class LiveSession
         "discussing. Restate only the figures provided - never invent numbers. If GROUP COORDINATION " +
         "data is present, name the strongest change across the pulls (followership, entropy, peak " +
         "speed, deaths, boss %) and cite its exact figures. Speak to the trajectory across pulls, " +
-        "not just the last one.";
+        "not just the last one. If the WIPE CLASSIFICATION says CALLED WIPE, the raid reset on " +
+        "purpose: acknowledge it in one sentence and do NOT coach the wipe.";
 
     private async Task GenerateInsightAsync(LivePull pull, CancellationToken ct)
     {
@@ -418,7 +419,7 @@ public sealed class LiveSession
                 // v2b — the six-signal pack (the RaidUI DiagStrip port): healer coverage and
                 // spacing per pull, with the collapse moments (snaps) called out by the second.
                 var covLines = new List<string>();
-                var aggByPull = new Dictionary<string, SignalAggregatesDto>(StringComparer.Ordinal);
+                var sigByPull = new Dictionary<string, PullSignalsDto>(StringComparer.Ordinal);
                 foreach (var pt in coh.Points)
                 {
                     if (!parse.ReplaysByPullId.TryGetValue(pt.PullId, out var replay) || replay.Frames.Count == 0)
@@ -426,7 +427,7 @@ public sealed class LiveSession
                     PullSignalsDto sig;
                     try { sig = SignalsArtifact.BuildForReplay(replay); }
                     catch { continue; }
-                    aggByPull[pt.PullId] = sig.Aggregates;
+                    sigByPull[pt.PullId] = sig;
                     var a = sig.Aggregates;
                     var line = $"  #{pt.PullN}: coverage avg {a.CoverageAvg * 100:0}%, " +
                                $"min {a.CoverageMin * 100:0}% at {sig.Signals["coverage"].Peak.AtSec}s";
@@ -461,12 +462,50 @@ public sealed class LiveSession
                     if (pullL is not null && pullR is not null && best.PullId != current.PullId)
                     {
                         var diff = PullDiff.Build(enc.Name, enc.Difficulty, pullL, pullR,
-                            aggByPull.GetValueOrDefault(best.PullId), aggByPull.GetValueOrDefault(current.PullId));
+                            sigByPull.GetValueOrDefault(best.PullId)?.Aggregates,
+                            sigByPull.GetValueOrDefault(current.PullId)?.Aggregates);
                         sb.AppendLine($"THIS PULL (#{current.PullN}) vs YOUR BEST TONIGHT (#{best.PullN}, {best.Outcome}):");
                         sb.AppendLine($"  {diff.RuleHeadline}");
                         foreach (var m in diff.Metrics.Where(m => m.Wired))
                             sb.AppendLine($"  {m.Label}: {m.L}{m.Unit} -> {m.R}{m.Unit}" +
                                           (m.Dir != "flat" ? $" ({m.Dir})" : ""));
+                    }
+                }
+
+                // The classify port (RaidUI rule tree, ADR-003/005/008): a deterministic verdict
+                // on the just-ended wipe — including the called-wipe gate, so the model doesn't
+                // earnestly coach an intentional reset.
+                if (!string.Equals(current.Outcome, "kill", StringComparison.OrdinalIgnoreCase)
+                    && parse.ReplaysByPullId.TryGetValue(current.PullId, out var curReplay)
+                    && sigByPull.TryGetValue(current.PullId, out var curSig))
+                {
+                    Classification? cls = null;
+                    try
+                    {
+                        cls = WipeClassifier.Classify(curReplay, WipeClassifier.AdaptSignals(curSig),
+                            current.Outcome, current.BossEndPctHp);
+                    }
+                    catch { /* classification is additive evidence; never sink the card */ }
+
+                    if (cls is not null)
+                    {
+                        if (cls.Kind == "called-wipe")
+                        {
+                            sb.AppendLine($"WIPE CLASSIFICATION (deterministic rule tree): CALLED WIPE " +
+                                          $"({cls.CalledWipePattern}) - the raid reset on purpose; do not " +
+                                          $"analyze this wipe as a failure.");
+                        }
+                        else
+                        {
+                            var line = $"WIPE CLASSIFICATION (deterministic rule tree): {cls.Kind} collapse, " +
+                                       $"confidence {cls.Confidence}, onset ~{cls.InflectionMs / 1000}s";
+                            if (cls.Affected.Count > 0 && cls.Kind != "systemic")
+                                line += $"; most implicated: {string.Join(", ", cls.Affected.Take(4))}";
+                            sb.AppendLine(line);
+                            if (cls.Evidence.Count > 0)
+                                sb.AppendLine("  top evidence: " +
+                                    string.Join("; ", cls.Evidence.Take(3).Select(e => e.Reason)));
+                        }
                     }
                 }
             }
