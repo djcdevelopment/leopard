@@ -10,12 +10,18 @@ public sealed record ComputedSignal(
 
 public sealed record ClassificationEvidence(string SignalId, double Value, string Reason);
 
+/// <summary>The healer whose behavior drove a classified coverage pattern.</summary>
+public sealed record CoverageOffenderDto(string EntityId, string DisplayName, int AtMs);
+
 /// <summary>kind: systemic | subgroup | individual | called-wipe. Affected carries entity
 /// display short-names. CalledWipePattern is set only for called-wipes
-/// (late-throughput | synchronized-reset | early-reset).</summary>
+/// (late-throughput | synchronized-reset | early-reset). CoveragePattern
+/// (snap | tank-dip | edge-off) and Offender are set only when coverage is the top
+/// evidence signal and the quality model resolved them (the 2026-04-23 follow-ups).</summary>
 public sealed record Classification(
     string Kind, string Confidence, IReadOnlyList<string> Affected, int InflectionMs,
-    IReadOnlyList<ClassificationEvidence> Evidence, string? CalledWipePattern);
+    IReadOnlyList<ClassificationEvidence> Evidence, string? CalledWipePattern,
+    string? CoveragePattern = null, CoverageOffenderDto? Offender = null);
 
 /// <summary>
 /// The wipe-classification rule tree, ported from RaidUI's <c>classify.js</c>
@@ -125,7 +131,7 @@ public static class WipeClassifier
 
     public static Classification? Classify(
         PullReplay replay, IReadOnlyList<ComputedSignal> signals,
-        string outcome, double? bossEndPctHp)
+        string outcome, double? bossEndPctHp, CoverageSeriesDto? coverage = null)
     {
         // (1) Outcome gate — kills aren't classified.
         if (!string.Equals(outcome, "wipe", StringComparison.OrdinalIgnoreCase)) return null;
@@ -210,13 +216,176 @@ public static class WipeClassifier
         }
         var confidence = strongAligned >= 2 ? "high" : aligned >= 2 ? "med" : "low";
 
-        var evidence = BuildEvidence(signals, durationMs, inflectionMs);
+        var evidence = BuildEvidence(signals, durationMs, inflectionMs, coverage);
 
         // Affected entityIds → short display names (first token before the hyphen).
         var nameById = replay.Entities.ToDictionary(e => e.EntityId, e => ShortName(e.DisplayName));
         var affected = affectedIds.Select(id => nameById.GetValueOrDefault(id, id)).ToList();
 
-        return new Classification(kind, confidence, affected, inflectionMs, evidence, null);
+        // Coverage-pattern tag + named-healer offender (the 2026-04-23 follow-ups) — only
+        // when coverage is the TOP evidence signal, same gate as the JS.
+        string? coveragePattern = null;
+        CoverageOffenderDto? offender = null;
+        if (coverage is not null && evidence.Count > 0 && evidence[0].SignalId == "coverage")
+        {
+            coveragePattern = DetectCoveragePattern(coverage, inflectionMs);
+            if (coveragePattern is not null)
+                offender = DetectOffendingHealer(coveragePattern, coverage, inflectionMs, replay);
+        }
+
+        return new Classification(kind, confidence, affected, inflectionMs, evidence, null,
+            coveragePattern, offender);
+    }
+
+    // ── Coverage pattern + offender (v2c — reads the CoverageTimeline quality model) ──
+
+    /// <summary>snap (quality collapse → damage), tank-dip (tanks uniquely lost cover while
+    /// the raid held), or edge-off (healers anchored, raid drifted to rim-of-range).</summary>
+    public static string? DetectCoveragePattern(CoverageSeriesDto cov, int inflectionMs)
+    {
+        var s = cov.Summary;
+        // Pattern A (priority): a damage-followed snap within ±10s of the inflection.
+        foreach (var snap in s.SnappingPoints)
+            if (snap.FollowedByDamageMs is not null && Math.Abs(snap.TimeMs - inflectionMs) <= 10_000)
+                return "snap";
+        // Pattern B: tanks dipped ≥20pp below the raid and under 60%. Guard: a pull with no
+        // tanks cannot tank-dip (T=0 reads tankPct 0 every frame — a degenerate input the JS
+        // original never met because real rosters always carry tanks).
+        var hasTanks = cov.Frames.Count > 0 && cov.Frames[0].Tank.Total > 0;
+        if (hasTanks && s.MinRaidPct - s.MinTankPct >= 20 && s.MinTankPct < 60) return "tank-dip";
+        // Pattern C: chronically poor quality with no discrete snap → raid moved wrong.
+        if (s.AvgQualityScore < 70 || s.MinQualityScore < 50) return "edge-off";
+        return null;
+    }
+
+    /// <summary>Per-pattern named-healer attribution. snap = biggest centrality drop between
+    /// the pre-drop quality-high frame and the snap frame; tank-dip = the healer who covered
+    /// the tank before the dip and doesn't at it (highest prior centrality), else worst
+    /// edge-proximity at the dip; edge-off = highest mean edge-proximity over ±3s.</summary>
+    public static CoverageOffenderDto? DetectOffendingHealer(
+        string pattern, CoverageSeriesDto cov, int inflectionMs, PullReplay replay)
+    {
+        var frames = cov.Frames;
+        if (frames.Count == 0) return null;
+        var stepMs = replay.FrameStepMs > 0 ? replay.FrameStepMs : 200;
+        int FrameFor(int t) => Math.Clamp(t / stepMs, 0, frames.Count - 1);
+        string NameOf(string id) => ShortName(
+            replay.Entities.FirstOrDefault(e => e.EntityId == id)?.DisplayName ?? id);
+
+        if (pattern == "snap")
+        {
+            SnappingPointDto? pick = null;
+            foreach (var s in cov.Summary.SnappingPoints)
+            {
+                if (Math.Abs(s.TimeMs - inflectionMs) > 10_000) continue;
+                if (pick is null) { pick = s; continue; }
+                var sDmg = s.FollowedByDamageMs is not null;
+                var pDmg = pick.FollowedByDamageMs is not null;
+                if (sDmg && !pDmg) { pick = s; continue; }
+                if (sDmg == pDmg && Math.Abs(s.TimeMs - inflectionMs) < Math.Abs(pick.TimeMs - inflectionMs))
+                    pick = s;
+            }
+            if (pick is null) return null;
+            var snapFi = FrameFor(pick.TimeMs);
+            var fromFi = Math.Max(0, snapFi - 10);
+            var preFi = fromFi; var preQ = -1;
+            for (var k = fromFi; k < snapFi; k++)
+                if (frames[k].Quality.OverallScore > preQ) { preQ = frames[k].Quality.OverallScore; preFi = k; }
+            var preBy = frames[preFi].PerHealer.ToDictionary(x => x.HealerId);
+            string? bestId = null; var bestDrop = double.NegativeInfinity; var bestCovDrop = double.NegativeInfinity;
+            foreach (var hNow in frames[snapFi].PerHealer)
+            {
+                if (!preBy.TryGetValue(hNow.HealerId, out var hPre)) continue;
+                var cDrop = hPre.Centrality - hNow.Centrality;
+                var covDrop = hPre.CoveredCount - (double)hNow.CoveredCount;
+                if (cDrop > bestDrop || (cDrop == bestDrop && covDrop > bestCovDrop))
+                { bestId = hNow.HealerId; bestDrop = cDrop; bestCovDrop = covDrop; }
+            }
+            return bestId is not null && bestDrop > 0
+                ? new CoverageOffenderDto(bestId, NameOf(bestId), pick.TimeMs) : null;
+        }
+
+        if (pattern == "tank-dip")
+        {
+            var tankIds = replay.Entities
+                .Where(e => e.Kind == "Player" && e.Role?.Contains("tank", StringComparison.OrdinalIgnoreCase) == true)
+                .Select(e => e.EntityId).ToHashSet(StringComparer.Ordinal);
+            if (tankIds.Count == 0) return null;
+            var dipFi = -1; var dipPct = double.PositiveInfinity;
+            var lo = inflectionMs - 3000; var hi = inflectionMs + 3000;
+            for (var fi = 0; fi < frames.Count; fi++)
+            {
+                if (frames[fi].TimeMs < lo || frames[fi].TimeMs > hi) continue;
+                if (frames[fi].Tank.Pct < dipPct) { dipPct = frames[fi].Tank.Pct; dipFi = fi; }
+            }
+            if (dipFi < 0)
+                for (var fi = 0; fi < frames.Count; fi++)
+                    if (frames[fi].Tank.Pct < dipPct) { dipPct = frames[fi].Tank.Pct; dipFi = fi; }
+            if (dipFi < 0) return null;
+            var refFi = Math.Max(0, dipFi - 15);
+
+            // Healer-covers-tank via replay positions + default normalized range (the same
+            // formula the reducer uses; the per-frame dto doesn't carry the raider id list).
+            var arenaAvg = (replay.ArenaYd.Width + replay.ArenaYd.Height) / 2;
+            var rangeNorm = arenaAvg > 0 ? CoverageTimeline.DefaultRangeYd / arenaAvg : 0;
+            var idxById = new Dictionary<string, int>(StringComparer.Ordinal);
+            for (var i = 0; i < replay.Entities.Count; i++) idxById[replay.Entities[i].EntityId] = i;
+            bool CoversTank(string healerId, int fi)
+            {
+                if (!idxById.TryGetValue(healerId, out var hIdx) || rangeNorm <= 0) return false;
+                var pos = replay.Frames[Math.Min(fi, replay.Frames.Count - 1)].EntityPositions;
+                var hx = pos[hIdx * 2]; var hy = pos[hIdx * 2 + 1];
+                foreach (var tid in tankIds)
+                {
+                    if (!idxById.TryGetValue(tid, out var tIdx)) continue;
+                    var dx = hx - pos[tIdx * 2]; var dy = hy - pos[tIdx * 2 + 1];
+                    if (Math.Sqrt(dx * dx + dy * dy) <= rangeNorm) return true;
+                }
+                return false;
+            }
+
+            var droppers = frames[dipFi].PerHealer
+                .Where(x => CoversTank(x.HealerId, refFi) && !CoversTank(x.HealerId, dipFi))
+                .Select(x => x.HealerId).ToList();
+            if (droppers.Count > 0)
+            {
+                var preBy = frames[refFi].PerHealer.ToDictionary(x => x.HealerId);
+                var best = droppers.OrderByDescending(id => preBy.GetValueOrDefault(id)?.Centrality ?? 0).First();
+                return new CoverageOffenderDto(best, NameOf(best), frames[dipFi].TimeMs);
+            }
+            var worst = frames[dipFi].PerHealer.OrderByDescending(x => x.EdgeProximityOfCovered).FirstOrDefault();
+            return worst is not null
+                ? new CoverageOffenderDto(worst.HealerId, NameOf(worst.HealerId), frames[dipFi].TimeMs) : null;
+        }
+
+        if (pattern == "edge-off")
+        {
+            var lo = inflectionMs - 3000; var hi = inflectionMs + 3000;
+            var sum = new Dictionary<string, double>(StringComparer.Ordinal);
+            var cnt = new Dictionary<string, int>(StringComparer.Ordinal);
+            foreach (var fr in frames)
+            {
+                if (fr.TimeMs < lo || fr.TimeMs > hi) continue;
+                foreach (var x in fr.PerHealer)
+                {
+                    sum[x.HealerId] = sum.GetValueOrDefault(x.HealerId) + x.EdgeProximityOfCovered;
+                    cnt[x.HealerId] = cnt.GetValueOrDefault(x.HealerId) + 1;
+                }
+            }
+            if (sum.Count == 0) return null;
+            var bestId = sum.OrderByDescending(kv => kv.Value / Math.Max(1, cnt[kv.Key])).First().Key;
+            var atMs = inflectionMs; var atEdge = double.NegativeInfinity;
+            foreach (var fr in frames)
+            {
+                if (fr.TimeMs < lo || fr.TimeMs > hi) continue;
+                var mine = fr.PerHealer.FirstOrDefault(x => x.HealerId == bestId);
+                if (mine is not null && mine.EdgeProximityOfCovered > atEdge)
+                { atEdge = mine.EdgeProximityOfCovered; atMs = fr.TimeMs; }
+            }
+            return new CoverageOffenderDto(bestId, NameOf(bestId), atMs);
+        }
+
+        return null;
     }
 
     // ── Called-wipe detection (ADR-008) ─────────────────────────────────────
@@ -463,16 +632,47 @@ public static class WipeClassifier
     // ── Evidence + helpers ──────────────────────────────────────────────────
 
     private static IReadOnlyList<ClassificationEvidence> BuildEvidence(
-        IReadOnlyList<ComputedSignal> signals, int durationMs, int inflectionMs)
+        IReadOnlyList<ComputedSignal> signals, int durationMs, int inflectionMs,
+        CoverageSeriesDto? coverage)
     {
         var sec = inflectionMs / 1000;
         var entries = new List<(ClassificationEvidence E, double C)>();
         foreach (var s in signals)
         {
             var value = sec >= 0 && sec < s.Series.Count ? Math.Round(s.Series[sec], 6) : 0;
-            var closeness = Math.Max(0, 1 - Math.Abs(s.TightestAtMs - inflectionMs) / 10000.0);
-            var magnitude = Math.Max(Math.Abs(s.Tightest), 0.0001);
-            var contribution = closeness * magnitude;
+            double contribution;
+            if (s.Id == "coverage" && coverage is not null)
+            {
+                // The 2026-04-23 coverage gate: promote coverage into evidence only when it
+                // was SEVERE (≥15% of the pull in fragile coverage OR worst quality < 50)
+                // AND LOCAL to the inflection (worst moment within ±3s, or a damage-followed
+                // snap within ±3s). Otherwise contribution = 0 — coverage sorts last and the
+                // pattern/offender machinery never fires on a pull where it isn't the story.
+                var sum = coverage.Summary;
+                var fragileFraction = durationMs > 0 ? (double)sum.TimeInFragileCoverageMs / durationMs : 0;
+                var severe = fragileFraction >= 0.15 || sum.MinQualityScore < 50;
+                var localByTight = Math.Abs(s.TightestAtMs - inflectionMs) <= 3000;
+                var snapDelta = sum.SnappingPoints
+                    .Where(sp => sp.FollowedByDamageMs is not null)
+                    .Select(sp => (double)Math.Abs(sp.TimeMs - inflectionMs))
+                    .DefaultIfEmpty(double.PositiveInfinity).Min();
+                var local = localByTight || snapDelta <= 3000;
+                if (severe && local && s.Tightest > 0)
+                {
+                    var effectiveDelta = snapDelta <= 3000 ? snapDelta : Math.Abs(s.TightestAtMs - inflectionMs);
+                    var closeness0 = Math.Max(0, 1 - effectiveDelta / 10000.0);
+                    var severityWeight = 0.5 + Math.Max(fragileFraction,
+                        sum.MinQualityScore < 50 ? (50 - sum.MinQualityScore) / 100.0 : 0);
+                    contribution = closeness0 * Math.Abs(s.Tightest) * severityWeight;
+                }
+                else contribution = 0;
+            }
+            else
+            {
+                var closeness = Math.Max(0, 1 - Math.Abs(s.TightestAtMs - inflectionMs) / 10000.0);
+                var magnitude = Math.Max(Math.Abs(s.Tightest), 0.0001);
+                contribution = closeness * magnitude;
+            }
             entries.Add((new ClassificationEvidence(s.Id, value, Phrases.GetValueOrDefault(s.Id, s.Id)), contribution));
         }
         return entries.OrderByDescending(e => e.C).Take(5).Select(e => e.E).ToList();

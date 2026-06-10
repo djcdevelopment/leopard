@@ -482,8 +482,11 @@ public sealed class LiveSession
                     Classification? cls = null;
                     try
                     {
+                        // v2c: the per-frame coverage quality model feeds the pattern tags and
+                        // the named-healer attribution.
+                        var coverage = CoverageTimeline.Compute(curReplay);
                         cls = WipeClassifier.Classify(curReplay, WipeClassifier.AdaptSignals(curSig),
-                            current.Outcome, current.BossEndPctHp);
+                            current.Outcome, current.BossEndPctHp, coverage);
                     }
                     catch { /* classification is additive evidence; never sink the card */ }
 
@@ -505,6 +508,20 @@ public sealed class LiveSession
                             if (cls.Evidence.Count > 0)
                                 sb.AppendLine("  top evidence: " +
                                     string.Join("; ", cls.Evidence.Take(3).Select(e => e.Reason)));
+                            if (cls.CoveragePattern is not null)
+                            {
+                                var pat = cls.CoveragePattern switch
+                                {
+                                    "snap" => "a healer moved late, coverage quality collapsed, damage followed",
+                                    "tank-dip" => "the tanks uniquely lost healer cover while the raid held",
+                                    "edge-off" => "healers held their anchor but the raid drifted to the edge of range",
+                                    _ => cls.CoveragePattern,
+                                };
+                                var covLine = $"  coverage pattern: {cls.CoveragePattern} ({pat})";
+                                if (cls.Offender is not null)
+                                    covLine += $" - {cls.Offender.DisplayName} at ~{cls.Offender.AtMs / 1000}s";
+                                sb.AppendLine(covLine);
+                            }
                         }
                     }
                 }
