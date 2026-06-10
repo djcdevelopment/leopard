@@ -472,6 +472,27 @@ public sealed class LiveSession
                     }
                 }
 
+                // The affinity port: who actually travels together on this boss tonight. One
+                // line of emergent social structure — groups by movement, not by raid frame.
+                try
+                {
+                    var bossReplays = coh.Points
+                        .Where(pt => parse.ReplaysByPullId.ContainsKey(pt.PullId))
+                        .Select(pt => parse.ReplaysByPullId[pt.PullId])
+                        .Where(rp => rp.Frames.Count > 1).ToList();
+                    var parts = MovementAffinity.BuildParticipants(bossReplays);
+                    if (parts.Count >= 4)
+                    {
+                        var groups = MovementAffinity.CutToGroups(
+                            MovementAffinity.Cluster(MovementAffinity.ComputeAffinity(parts)),
+                            Math.Min(3, parts.Count - 1), parts);
+                        if (groups.Count > 1)
+                            sb.AppendLine("MOVEMENT GROUPS tonight on this boss (who actually travels together, from positions): "
+                                + string.Join(" · ", groups.Select(g => $"{g.GroupId}: {string.Join(", ", g.Members)}")));
+                    }
+                }
+                catch { /* additive evidence; never sink the card */ }
+
                 // The classify port (RaidUI rule tree, ADR-003/005/008): a deterministic verdict
                 // on the just-ended wipe — including the called-wipe gate, so the model doesn't
                 // earnestly coach an intentional reset.
