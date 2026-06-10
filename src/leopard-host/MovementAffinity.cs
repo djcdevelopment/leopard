@@ -4,7 +4,8 @@ using Tempo.Host.ViewerApi.Projections;
 
 namespace Leopard.Host;
 
-public sealed record ParticipantTrajectory(string PullId, double ArenaYdAvg, IReadOnlyList<double> Points);
+public sealed record ParticipantTrajectory(
+    string PullId, double ArenaYdAvg, IReadOnlyList<double> Points, string? Outcome = null);
 
 public sealed record ShapeParticipant(
     string ParticipantId, string DisplayName, string? Role,
@@ -58,7 +59,9 @@ public static class MovementAffinity
 
     /// <summary>Per-participant trajectories across pulls. Identity = ParticipantId when the
     /// replay carries one (stable across pulls), else EntityId.</summary>
-    public static IReadOnlyList<ShapeParticipant> BuildParticipants(IEnumerable<PullReplay> replays)
+    public static IReadOnlyList<ShapeParticipant> BuildParticipants(
+        IEnumerable<PullReplay> replays,
+        IReadOnlyDictionary<string, string>? outcomeByPullId = null)
     {
         var byId = new Dictionary<string, (string Name, string? Role, List<ParticipantTrajectory> Trs)>(StringComparer.Ordinal);
         foreach (var replay in replays)
@@ -77,7 +80,8 @@ public static class MovementAffinity
                 }
                 if (!byId.TryGetValue(id, out var entry))
                     entry = byId[id] = (ShortName(e.DisplayName), e.Role, new List<ParticipantTrajectory>());
-                entry.Trs.Add(new ParticipantTrajectory(replay.PullId, arenaAvg, points));
+                entry.Trs.Add(new ParticipantTrajectory(replay.PullId, arenaAvg, points,
+                    outcomeByPullId?.GetValueOrDefault(replay.PullId)));
             }
         }
         return byId.Select(kv => new ShapeParticipant(kv.Key, kv.Value.Name, kv.Value.Role, kv.Value.Trs))
@@ -241,7 +245,12 @@ public static class MovementAffinity
     /// with replay frames — participants, the composite matrix, and the k=4 group cut.</summary>
     public static string BuildJson(ParseResult parse, JsonSerializerOptions json)
     {
-        var participants = BuildParticipants(parse.ReplaysByPullId.Values.Where(r => r.Frames.Count > 1));
+        var outcomes = EncountersProjection.ToEncounters(parse.Sessions)
+            .SelectMany(e => e.Pulls)
+            .GroupBy(p => p.Id, StringComparer.Ordinal)
+            .ToDictionary(g => g.Key, g => g.First().Outcome, StringComparer.Ordinal);
+        var participants = BuildParticipants(
+            parse.ReplaysByPullId.Values.Where(r => r.Frames.Count > 1), outcomes);
         var affinity = ComputeAffinity(participants);
         var groups = participants.Count >= 2
             ? CutToGroups(Cluster(affinity), Math.Min(4, participants.Count), participants)
@@ -255,6 +264,9 @@ public static class MovementAffinity
             composite = affinity.Composite,
             groups,
             coverageGaps = gapReport,
+            // The movement leaderboard + the wipes-vs-kills movement contrast (meters.js port).
+            meters = ParticipantMeters.Compute(participants),
+            metersByOutcome = ParticipantMeters.ComputeByOutcome(participants),
         }, json);
     }
 
