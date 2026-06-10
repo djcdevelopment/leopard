@@ -94,6 +94,31 @@ export async function setConfig(logDir) {
   return r.json()
 }
 
+// ── Live (between-pull insight) ── the host watches the live combat log via Tempo's ingest
+// front and pre-generates one grounded insight per pull. See docs/live-insight-design-brief.md.
+
+export async function getLiveStatus() {
+  const r = await fetch(`${A}/live/status`)
+  if (!r.ok) throw new Error(`live status HTTP ${r.status}`)
+  return r.json()
+}
+
+export async function getLiveInsight() {
+  const r = await fetch(`${A}/live/insight`)
+  if (!r.ok) throw new Error(`live insight HTTP ${r.status}`)
+  return r.json()
+}
+
+export async function postLiveFeedback(body) {
+  const r = await fetch(`${A}/live/feedback`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+  if (!r.ok) throw new Error(`live feedback HTTP ${r.status}`)
+  return r.json()
+}
+
 // Native folder dialog — only works in the desktop shell (returns { available:false } in a browser).
 export async function pickFolder() {
   const r = await fetch(`${A}/pick-folder`, { method: 'POST' })

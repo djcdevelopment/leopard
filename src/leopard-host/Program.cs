@@ -67,6 +67,31 @@ string ShapeCachePath(string name, DateTime mtimeUtc)
     return Path.Combine(cacheDir, $"{safe}__{mtimeUtc.Ticks}.shape.v1.json");
 }
 
+// Every parsed night's career-input encounters, fanned in (same loop the Roster/wkdelta/career-
+// summary endpoints run inline; the live loop needs it as a callable).
+List<RaidViewEncounter> LoadCareerInputs()
+{
+    var cfg = LoadConfig();
+    var all = new List<RaidViewEncounter>();
+    if (!Directory.Exists(cfg.LogDir)) return all;
+    foreach (var f in new DirectoryInfo(cfg.LogDir).GetFiles("WoWCombatLog*.txt"))
+    {
+        var cc = CareerCachePath(f.Name, f.LastWriteTimeUtc);
+        if (!File.Exists(cc)) continue;
+        try
+        {
+            var encs = JsonSerializer.Deserialize<List<RaidViewEncounter>>(File.ReadAllText(cc), json);
+            if (encs is not null) all.AddRange(encs);
+        }
+        catch { /* skip a corrupt/old artifact */ }
+    }
+    return all;
+}
+
+// The live between-pull loop (Tempo live ingest → evidence → local inference → jsonl record).
+// See docs/live-insight-design-brief.md.
+var live = new LiveSession(LoadConfig, LoadCareerInputs, dataDir);
+
 app.MapGet("/api/health", () => Results.Json(new { ok = true, service = "leopard-host" }));
 
 app.MapGet("/api/config", () => Results.Json(LoadConfig(), json));
@@ -75,7 +100,20 @@ app.MapPut("/api/config", async (HttpRequest req) =>
     var c = await JsonSerializer.DeserializeAsync<LeopardConfig>(req.Body, json);
     if (c is null || string.IsNullOrWhiteSpace(c.LogDir)) return Results.BadRequest(new { error = "logDir required" });
     SaveConfig(c);
+    live.Restart(); // re-pick the newest log under the (possibly new) dir
     return Results.Json(c, json);
+});
+
+// ── Live (between-pull insight) ── see docs/live-insight-design-brief.md ──
+app.MapGet("/api/live/status", () => Results.Json(live.Status, json));
+app.MapGet("/api/live/insight", () => Results.Json(live.Insight, json));
+app.MapPost("/api/live/feedback", async (HttpRequest req) =>
+{
+    var f = await JsonSerializer.DeserializeAsync<FeedbackRequest>(req.Body, json);
+    if (f is null || string.IsNullOrWhiteSpace(f.InsightId))
+        return Results.BadRequest(new { error = "insightId required" });
+    live.RecordFeedback(f.InsightId, f.Useful, f.Grounded, f.Comment);
+    return Results.Json(new { ok = true });
 });
 
 app.MapGet("/api/logs", () =>
@@ -281,7 +319,8 @@ app.MapPost("/api/pick-folder", () =>
         if (dlg.ShowDialog(form) == System.Windows.Forms.DialogResult.OK) picked = dlg.SelectedPath;
     });
     if (picked is null) return Results.Json(new { available = true, cancelled = true });
-    SaveConfig(new LeopardConfig(picked));
+    SaveConfig(LoadConfig() with { LogDir = picked }); // preserve the live-inference fields
+    live.Restart();
     return Results.Json(new { available = true, logDir = picked });
 });
 
@@ -330,6 +369,7 @@ app.UseStaticFiles(new StaticFileOptions
 });
 
 await app.StartAsync();
+live.Start(app.Lifetime.ApplicationStopping);
 
 if (args.Contains("--headless"))
 {
@@ -381,5 +421,8 @@ public class MainForm : System.Windows.Forms.Form
     }
 }
 
-record LeopardConfig(string LogDir);
+// LiveInferenceUrl/LiveModel: the between-pull insight endpoint (OpenAI chat-completions shape).
+// Defaults live in LiveSession (llama-server on the 2nd B70, :8080) — null here means "default".
+public record LeopardConfig(string LogDir, string? LiveInferenceUrl = null, string? LiveModel = null);
 record ParseRequest(List<string> Names);
+record FeedbackRequest(string InsightId, bool? Useful, bool? Grounded, string? Comment);
