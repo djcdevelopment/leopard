@@ -501,6 +501,19 @@ public sealed class LiveSession
                 }
                 catch { /* additive evidence; never sink the card */ }
 
+                // The segments port: the just-ended pull's movement phases as change-points.
+                try
+                {
+                    if (parse.ReplaysByPullId.TryGetValue(current.PullId, out var segReplay)
+                        && segReplay.Frames.Count > 1)
+                    {
+                        var phases = FormationSegments.Describe(FormationSegments.Detect(segReplay));
+                        if (phases is not null)
+                            sb.AppendLine($"FORMATION PHASES this pull (movement change-points, median pairwise spread): {phases}");
+                    }
+                }
+                catch { /* additive evidence; never sink the card */ }
+
                 // The classify port (RaidUI rule tree, ADR-003/005/008): a deterministic verdict
                 // on the just-ended wipe — including the called-wipe gate, so the model doesn't
                 // earnestly coach an intentional reset.
