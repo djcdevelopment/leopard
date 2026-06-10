@@ -23,6 +23,19 @@ public sealed record DendrogramDto(
 
 public sealed record MovementGroup(string GroupId, IReadOnlyList<string> Members);
 
+public sealed record GapParticipantRef(string Id, string Name, string? Role);
+
+/// <summary>kind: healer-dps-gap | tank-separation | isolated-ranged. The interpretation is
+/// LLM-ready prose — "the LLM should name it, not shame it" (the second-opinion reviewer's
+/// framing that drove this reducer).</summary>
+public sealed record CoverageGap(
+    string Kind, GapParticipantRef Primary, GapParticipantRef? Secondary,
+    double Composite, string Interpretation);
+
+public sealed record CoverageGapReport(
+    IReadOnlyList<CoverageGap> Gaps, int GapCount,
+    IReadOnlyList<string> HealersWithGaps, bool TanksWellPaired);
+
 /// <summary>
 /// The group-structure suite, ported from RaidUI's <c>shape/affinity.js</c> +
 /// <c>shape/clustering.js</c>: a pairwise N×N co-travel matrix (coProximity = fraction of
@@ -233,6 +246,7 @@ public static class MovementAffinity
         var groups = participants.Count >= 2
             ? CutToGroups(Cluster(affinity), Math.Min(4, participants.Count), participants)
             : Array.Empty<MovementGroup>() as IReadOnlyList<MovementGroup>;
+        var gapReport = CoverageGaps.Compute(affinity, participants);
         return JsonSerializer.Serialize(new
         {
             participants = participants.Select(p => new { id = p.ParticipantId, name = p.DisplayName, role = p.Role, pulls = p.Trajectories.Count }),
@@ -240,6 +254,7 @@ public static class MovementAffinity
             directionCosThreshold = DirectionCosThreshold,
             composite = affinity.Composite,
             groups,
+            coverageGaps = gapReport,
         }, json);
     }
 
@@ -247,5 +262,111 @@ public static class MovementAffinity
     {
         var hyphen = displayName.IndexOf('-');
         return hyphen > 0 ? displayName[..hyphen] : displayName;
+    }
+}
+
+/// <summary>
+/// Role-aware interpretation of the affinity matrix, ported from RaidUI's
+/// <c>shape/coverage-gaps.js</c> (the "4th categorically-distinct reducer"). Reads roles
+/// directly — deliberately NOT the dendrogram — so coverage logic stays robust when the
+/// cluster cut isn't meaningful. Three gap kinds: a healer whose mean co-travel with the
+/// DPS bucket is under 0.25 (out of heal range for the duration); tank pairs co-traveling
+/// under 0.15 (not swapping — check for a taunt issue); ranged whose best pair-composite
+/// is under 0.20 (standing alone, out of support range).
+/// </summary>
+public static class CoverageGaps
+{
+    public const double HealerGapThreshold = 0.25;
+    public const double TankSpreadThreshold = 0.15;
+    public const double IsolatedRangedThreshold = 0.20;
+
+    public static CoverageGapReport Compute(
+        AffinityMatrixDto matrix, IReadOnlyList<ShapeParticipant> participants)
+    {
+        var n = matrix.ParticipantIds.Count;
+        if (n < 2 || participants.Count != n)
+            return new CoverageGapReport(Array.Empty<CoverageGap>(), 0, Array.Empty<string>(), false);
+
+        double Composite(int a, int b) => a == b ? 1 : matrix.Composite[a * n + b];
+        GapParticipantRef Ref(int i) => new(matrix.ParticipantIds[i],
+            participants[i].DisplayName, participants[i].Role);
+        static string NormRole(string? r) => r switch
+        {
+            "MeleeDps" => "Melee", "RangedDps" => "Ranged", null => "", _ => r,
+        };
+
+        var healers = new List<int>(); var tanks = new List<int>();
+        var melee = new List<int>(); var ranged = new List<int>();
+        for (var i = 0; i < n; i++)
+        {
+            switch (NormRole(participants[i].Role))
+            {
+                case "Healer": healers.Add(i); break;
+                case "Tank": tanks.Add(i); break;
+                case "Melee": melee.Add(i); break;
+                case "Ranged": ranged.Add(i); break;
+            }
+        }
+        var dps = melee.Concat(ranged).ToList();
+
+        var gaps = new List<CoverageGap>();
+        var healersWithGaps = new List<string>();
+
+        // 1. Healer → DPS-cluster coverage gaps.
+        foreach (var h in healers)
+        {
+            if (dps.Count == 0) continue;
+            var others = dps.Where(d => d != h).ToList();
+            if (others.Count == 0) continue;
+            var mean = others.Average(d => Composite(h, d));
+            if (mean < HealerGapThreshold)
+            {
+                var p = Ref(h);
+                gaps.Add(new CoverageGap("healer-dps-gap", p, null, Math.Round(mean, 3),
+                    $"{p.Name} co-travel with DPS cluster at {mean:0.00} (threshold " +
+                    $"{HealerGapThreshold:0.00}) - healer out of range to cover the DPS group."));
+                healersWithGaps.Add(p.Name);
+            }
+        }
+
+        // 2. Tank separation — pairwise tank composite below threshold = not swapping.
+        var tanksWellPaired = false;
+        if (tanks.Count >= 2)
+        {
+            var pairSum = 0.0; var pairCount = 0;
+            for (var i = 0; i < tanks.Count; i++)
+                for (var j = i + 1; j < tanks.Count; j++) { pairSum += Composite(tanks[i], tanks[j]); pairCount++; }
+            if (pairCount > 0 && pairSum / pairCount < TankSpreadThreshold)
+            {
+                for (var i = 0; i < tanks.Count; i++)
+                    for (var j = i + 1; j < tanks.Count; j++)
+                    {
+                        var c = Composite(tanks[i], tanks[j]);
+                        if (c >= TankSpreadThreshold) continue;
+                        var a = Ref(tanks[i]); var b = Ref(tanks[j]);
+                        gaps.Add(new CoverageGap("tank-separation", a, b, Math.Round(c, 3),
+                            $"{a.Name} and {b.Name} co-travel at {c:0.00} - tanks not swapping; " +
+                            "check for taunt issue."));
+                    }
+            }
+            else tanksWellPaired = true;
+        }
+
+        // 3. Isolated ranged — best pair-composite with anyone under threshold.
+        foreach (var r in ranged)
+        {
+            var maxC = 0.0;
+            for (var j = 0; j < n; j++)
+                if (j != r && Composite(r, j) > maxC) maxC = Composite(r, j);
+            if (maxC < IsolatedRangedThreshold)
+            {
+                var p = Ref(r);
+                gaps.Add(new CoverageGap("isolated-ranged", p, null, Math.Round(maxC, 3),
+                    $"{p.Name} max pair-composite {maxC:0.00} (threshold " +
+                    $"{IsolatedRangedThreshold:0.00}) - standing alone too much, out of support range."));
+            }
+        }
+
+        return new CoverageGapReport(gaps, gaps.Count, healersWithGaps, tanksWellPaired);
     }
 }

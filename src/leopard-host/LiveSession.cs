@@ -483,12 +483,20 @@ public sealed class LiveSession
                     var parts = MovementAffinity.BuildParticipants(bossReplays);
                     if (parts.Count >= 4)
                     {
+                        var aff = MovementAffinity.ComputeAffinity(parts);
                         var groups = MovementAffinity.CutToGroups(
-                            MovementAffinity.Cluster(MovementAffinity.ComputeAffinity(parts)),
-                            Math.Min(3, parts.Count - 1), parts);
+                            MovementAffinity.Cluster(aff), Math.Min(3, parts.Count - 1), parts);
                         if (groups.Count > 1)
                             sb.AppendLine("MOVEMENT GROUPS tonight on this boss (who actually travels together, from positions): "
                                 + string.Join(" · ", groups.Select(g => $"{g.GroupId}: {string.Join(", ", g.Members)}")));
+                        // Role-aware gaps over the same matrix — name it, not shame it.
+                        var gapReport = CoverageGaps.Compute(aff, parts);
+                        if (gapReport.GapCount > 0)
+                        {
+                            sb.AppendLine("COVERAGE GAPS (role-aware co-travel reading; structural, not blame):");
+                            foreach (var g in gapReport.Gaps.Take(3))
+                                sb.AppendLine($"  {g.Interpretation}");
+                        }
                     }
                 }
                 catch { /* additive evidence; never sink the card */ }

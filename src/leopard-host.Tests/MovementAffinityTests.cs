@@ -86,6 +86,58 @@ public class MovementAffinityTests
     }
 
     [Fact]
+    public void CoverageGaps_HealerFarFromDps_NamedNotShamed()
+    {
+        // Healer stationary far from two DPS who travel together: healer-dps-gap fires with
+        // the healer named; the co-traveling ranged pair is NOT isolated.
+        var entities = new (string Id, string Role)[]
+            { ("H", "Healer"), ("D1", "RangedDps"), ("D2", "RangedDps") };
+        var frames = Enumerable.Range(0, 20)
+            .Select(i => new[] { 0.9, 0.9, 0.1 + i * 0.01, 0.5, 0.1 + i * 0.01, 0.53 }).ToArray();
+        var replay = new PullReplay
+        {
+            SchemaVersion = "v1", PullId = "p1", FrameStepMs = 200,
+            ArenaYd = new ArenaYd(100, 100),
+            Entities = entities.Select(e => new ReplayEntity
+                { EntityId = e.Id, Kind = "Player", DisplayName = $"{e.Id}-Realm", ParticipantId = e.Id, Role = e.Role }).ToArray(),
+            Frames = frames.Select((p, i) => new ReplayFrame { T = i * 200, EntityPositions = p }).ToArray(),
+            Events = Array.Empty<ReplayEvent>(), PullParticipantIds = Array.Empty<string>(),
+        };
+        var parts = MovementAffinity.BuildParticipants(new[] { replay });
+        var report = CoverageGaps.Compute(MovementAffinity.ComputeAffinity(parts), parts);
+
+        Assert.Contains(report.Gaps, g => g.Kind == "healer-dps-gap" && g.Primary.Name == "H");
+        Assert.Contains("H", report.HealersWithGaps);
+        Assert.DoesNotContain(report.Gaps, g => g.Kind == "isolated-ranged"); // D1+D2 co-travel
+    }
+
+    [Fact]
+    public void CoverageGaps_TanksApart_SeparationFlagged_TogetherWellPaired()
+    {
+        PullReplay Build(double[][] frames) => new()
+        {
+            SchemaVersion = "v1", PullId = "p1", FrameStepMs = 200,
+            ArenaYd = new ArenaYd(100, 100),
+            Entities = new[] { ("T1", "Tank"), ("T2", "Tank") }.Select(e => new ReplayEntity
+                { EntityId = e.Item1, Kind = "Player", DisplayName = e.Item1, ParticipantId = e.Item1, Role = e.Item2 }).ToArray(),
+            Frames = frames.Select((p, i) => new ReplayFrame { T = i * 200, EntityPositions = p }).ToArray(),
+            Events = Array.Empty<ReplayEvent>(), PullParticipantIds = Array.Empty<string>(),
+        };
+        var apartFrames = Enumerable.Range(0, 20).Select(_ => new[] { 0.1, 0.1, 0.9, 0.9 }).ToArray();
+        var apartParts = MovementAffinity.BuildParticipants(new[] { Build(apartFrames) });
+        var apart = CoverageGaps.Compute(MovementAffinity.ComputeAffinity(apartParts), apartParts);
+        Assert.Contains(apart.Gaps, g => g.Kind == "tank-separation");
+        Assert.False(apart.TanksWellPaired);
+
+        var togetherFrames = Enumerable.Range(0, 20)
+            .Select(i => new[] { 0.1 + i * 0.01, 0.5, 0.1 + i * 0.01, 0.53 }).ToArray();
+        var togParts = MovementAffinity.BuildParticipants(new[] { Build(togetherFrames) });
+        var tog = CoverageGaps.Compute(MovementAffinity.ComputeAffinity(togParts), togParts);
+        Assert.True(tog.TanksWellPaired);
+        Assert.DoesNotContain(tog.Gaps, g => g.Kind == "tank-separation");
+    }
+
+    [Fact]
     public void CrossPull_TrajectoriesJoinByParticipantId()
     {
         // Two pulls: together in pull 1, far-and-stationary in pull 2 → composite averages
