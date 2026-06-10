@@ -469,6 +469,28 @@ public sealed class LiveSession
                         foreach (var m in diff.Metrics.Where(m => m.Wired))
                             sb.AppendLine($"  {m.Label}: {m.L}{m.Unit} -> {m.R}{m.Unit}" +
                                           (m.Dir != "flat" ? $" ({m.Dir})" : ""));
+
+                        // The divergence port: WHEN this pull stopped looking like the best one.
+                        try
+                        {
+                            if (parse.ReplaysByPullId.TryGetValue(best.PullId, out var bestReplay)
+                                && parse.ReplaysByPullId.TryGetValue(current.PullId, out var curReplay2)
+                                && bestReplay.Frames.Count > 1 && curReplay2.Frames.Count > 1)
+                            {
+                                var matches = PullDivergence.Match(bestReplay.Entities, curReplay2.Entities);
+                                var series = PullDivergence.ComputeWeighted(bestReplay, curReplay2, matches);
+                                var pips = PullDivergence.ExtractPips(series, bestReplay.FrameStepMs);
+                                if (pips.Count > 0)
+                                    sb.AppendLine($"  Positional divergence from the best pull (role-weighted): " +
+                                        $"first at {pips[0].TimeMs / 1000}s, {pips.Count} marker(s), " +
+                                        $"peak {pips.Max(p2 => p2.PeakDelta):0.00} at " +
+                                        $"{pips.OrderByDescending(p2 => p2.PeakDelta).First().TimeMs / 1000}s");
+                                else
+                                    sb.AppendLine("  Positional divergence from the best pull: none above threshold " +
+                                                  "(the raid walked the same paths).");
+                            }
+                        }
+                        catch { /* additive evidence; never sink the card */ }
                     }
                 }
 
