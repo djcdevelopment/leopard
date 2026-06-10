@@ -66,6 +66,12 @@ string ShapeCachePath(string name, DateTime mtimeUtc)
     // v1: per-pull density heatmaps. Version suffix lets a schema bump invalidate via re-parse.
     return Path.Combine(cacheDir, $"{safe}__{mtimeUtc.Ticks}.shape.v1.json");
 }
+string SignalsCachePath(string name, DateTime mtimeUtc)
+{
+    var safe = string.Join("_", name.Split(Path.GetInvalidFileNameChars()));
+    // v1: the six-signal pack per pull (the RaidUI DiagStrip port). See SignalsArtifact.
+    return Path.Combine(cacheDir, $"{safe}__{mtimeUtc.Ticks}.signals.v1.json");
+}
 
 // Every parsed night's career-input encounters, fanned in (same loop the Roster/wkdelta/career-
 // summary endpoints run inline; the live loop needs it as a callable).
@@ -152,9 +158,10 @@ app.MapPost("/api/parse", async (HttpRequest req) =>
             var traceCache = TraceCachePath(name, mtime);
             var careerCache = CareerCachePath(name, mtime);
             var shapeCache = ShapeCachePath(name, mtime);
+            var signalsCache = SignalsCachePath(name, mtime);
             // One parse feeds every artifact. Re-derive if ANY is missing, so a night parsed
             // before a surface existed regenerates that surface's artifact on next parse.
-            if (!File.Exists(cache) || !File.Exists(trendsCache) || !File.Exists(traceCache) || !File.Exists(careerCache) || !File.Exists(shapeCache))
+            if (!File.Exists(cache) || !File.Exists(trendsCache) || !File.Exists(traceCache) || !File.Exists(careerCache) || !File.Exists(shapeCache) || !File.Exists(signalsCache))
             {
                 var parse = ParserPipeline.Parse(path);
                 File.WriteAllText(cache, BoxScore.Build(parse), utf8);
@@ -167,6 +174,8 @@ app.MapPost("/api/parse", async (HttpRequest req) =>
                     JsonSerializer.Serialize(EncountersProjection.ToEncounters(parse.Sessions), json), utf8);
                 // Shape: per-pull density heatmaps for this night (needs replay frames).
                 File.WriteAllText(shapeCache, ShapeArtifact.BuildJson(parse, json), utf8);
+                // Signals: the six-signal diagnostic pack per pull (the RaidUI DiagStrip port).
+                File.WriteAllText(signalsCache, SignalsArtifact.BuildJson(parse, json), utf8);
             }
             results.Add(new { name, ok = true, parsed = true });
         }
@@ -217,6 +226,19 @@ app.MapGet("/api/shape/density", (string name) =>
     var path = Path.Combine(cfg.LogDir, name);
     if (!File.Exists(path)) return Results.NotFound(new { error = "log not found" });
     var cache = ShapeCachePath(name, File.GetLastWriteTimeUtc(path));
+    if (!File.Exists(cache)) return Results.NotFound(new { error = "not parsed yet" });
+    return Results.Text(File.ReadAllText(cache), "application/json");
+});
+
+// Signals — the six-signal diagnostic pack (spacing / coverage / deathsPerSec / followership /
+// entropy / hpVariance per second, + snaps + aggregates) per pull. The RaidUI DiagStrip port;
+// see docs/signals-artifact-port-brief.md. 404 => parsed before Signals existed (re-parse).
+app.MapGet("/api/signals", (string name) =>
+{
+    var cfg = LoadConfig();
+    var path = Path.Combine(cfg.LogDir, name);
+    if (!File.Exists(path)) return Results.NotFound(new { error = "log not found" });
+    var cache = SignalsCachePath(name, File.GetLastWriteTimeUtc(path));
     if (!File.Exists(cache)) return Results.NotFound(new { error = "not parsed yet" });
     return Results.Text(File.ReadAllText(cache), "application/json");
 });

@@ -414,6 +414,36 @@ public sealed class LiveSession
                     if (pt.PeakSpeed is double ps) line += $", peak speed {ps:0.0}";
                     sb.AppendLine(line);
                 }
+
+                // v2b — the six-signal pack (the RaidUI DiagStrip port): healer coverage and
+                // spacing per pull, with the collapse moments (snaps) called out by the second.
+                var covLines = new List<string>();
+                foreach (var pt in coh.Points)
+                {
+                    if (!parse.ReplaysByPullId.TryGetValue(pt.PullId, out var replay) || replay.Frames.Count == 0)
+                        continue;
+                    PullSignalsDto sig;
+                    try { sig = SignalsArtifact.BuildForReplay(replay); }
+                    catch { continue; }
+                    var a = sig.Aggregates;
+                    var line = $"  #{pt.PullN}: coverage avg {a.CoverageAvg * 100:0}%, " +
+                               $"min {a.CoverageMin * 100:0}% at {sig.Signals["coverage"].Peak.AtSec}s";
+                    if (a.FragileSec > 0) line += $", fragile {a.FragileSec:0}s";
+                    if (sig.Snaps.Count > 0)
+                    {
+                        var biggest = sig.Snaps.OrderByDescending(s => s.DropPct).First();
+                        line += $", {sig.Snaps.Count} coverage snap(s), biggest -{biggest.DropPct}pp at {biggest.AtSec}s";
+                    }
+                    if (a.SpacingTightest > 0) line += $", tightest spacing {a.SpacingTightest:0.0}yd";
+                    covLines.Add(line);
+                }
+                if (covLines.Count > 0)
+                {
+                    sb.AppendLine("HEALER COVERAGE & SPACING per pull (coverage = share of living " +
+                                  "players within 30yd of a living healer; a snap = sudden coverage " +
+                                  "collapse; fragile = seconds below 60% covered):");
+                    foreach (var l in covLines) sb.AppendLine(l);
+                }
             }
             if (TrendsProjection.TryBuildTrendsWindow(encounters, enc.Id, 6, out var win)
                 && win.RuleRows.Count > 0)
