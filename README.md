@@ -13,8 +13,10 @@ and a local **Ollama** provider for inference. Specialized inference runtimes
   one or many, **PARSE**. Parsing runs Tempo's parser in-process and, per night, caches a
   compact **box score**, a **trends** artifact, a **pipeline trace**, a **career-input** artifact,
   and a **shape** artifact (per-pull heatmaps; all keyed by file mtime).
-- **Leopard** — pick a parsed night, **see the exact box score** the model will read, and **Ask**.
-  The model restates those exact figures (never infers), so answers stay grounded in your data.
+- **Leopard** — pick a parsed night and zoom (night box score / boss career arc / recent form), then
+  **Ask**. Career zoom shows **"Tell Leopard what matters"** — a property palette that assembles the
+  XML context the model reads, visible as a "What Leopard knows" list. `render()===serialize()`:
+  the displayed evidence and the model payload are the same bytes (`CanonicalContext`).
 - **Roster** — every boss you've pulled as one **all-time career** row (attempts, kills, best %,
   direction, a progress arc), fanned in across every parsed night. Heroic/Mythic stay separate.
 - **Trends** — per-boss recent-window deltas (kills / deaths / best progress / duration) plus
@@ -36,10 +38,14 @@ src/leopard-host/   .NET — WinForms + WebView2 + in-process Kestrel. The doubl
 src/leopard-host.Tests/  xUnit — CareerRoster aggregation + PipelineTrace conservation/parity,
                     against Tempo's committed combat-log fixtures.
 src/leopard-web/    UI — Vite + React. The six tabs above; built to a static bundle for ship.
+                    context.test.js — vitest (18 tests): render===serialize byte-exact on all 3
+                    zoom shapes; determinism; frozen-value mutation rejection; SHA-256 validation.
 tools/              make-boxscore.mjs — standalone box-score generator (the host does this in C#).
 dependencies/       tempo-engine/seam.md — how Leopard reaches the Tempo engine.
 docs/               product-vision.md, feature-order.md, career-roster.md, pipeline-explorer.md,
-                    provider-contract.md, local-inference-runbook.md.
+                    provider-contract.md, local-inference-runbook.md, property-inventory.md
+                    (versioned property palette for the query builder), query-builder-design-prompt.md,
+                    rack-design-prompt.md (authoring surface design), adr/ (ADR-0001..0004).
 ```
 
 ## Dev
@@ -55,6 +61,9 @@ dotnet test src/leopard-host.Tests
 
 # UI hot-reload (optional; proxies /api + /ollama to the host) — http://localhost:5273
 cd src/leopard-web; npm install; npm run dev
+
+# web unit tests (vitest; 18 tests — CanonicalContext display==send invariant)
+cd src/leopard-web; npm test
 
 # build the shipped UI bundle into the host (vite outputs straight to wwwroot):
 cd src/leopard-web; npm run build      # -> ../leopard-host/wwwroot

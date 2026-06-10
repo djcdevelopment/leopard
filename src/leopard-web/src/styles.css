@@ -129,6 +129,38 @@ table.grid tr:hover { background: #15171f; }
 .evidence-panel .small { font-size: 12.5px; margin: 8px 0; }
 .boxscore { margin: 6px 0 2px; padding: 12px 14px; background: #0a0b0e; border: 1px solid var(--line); border-radius: 6px; font-family: Consolas, monospace; font-size: 12.5px; line-height: 1.5; color: #c8cdd6; white-space: pre-wrap; max-height: 340px; overflow: auto; }
 
+/* Career lens — property palette + "What Leopard knows" assembled list */
+.career-palette { margin: 8px 0 2px; }
+.career-palette .muted { display: block; margin-bottom: 6px; }
+.career-props { display: flex; flex-wrap: wrap; gap: 6px 14px; }
+.prop-toggle { display: flex; align-items: center; gap: 5px; font-size: 13px; color: var(--ink); cursor: pointer; }
+.prop-toggle input { accent-color: var(--accent); cursor: pointer; }
+
+.lens-summary { list-style: none; margin: 8px 0 6px; padding: 0; }
+.lens-summary li { display: flex; gap: 6px; align-items: baseline; padding: 3px 0; font-size: 13.5px; border-bottom: 1px solid #1a1d24; }
+.lens-summary li:last-child { border-bottom: none; }
+.lens-check { color: var(--accent); font-weight: 700; flex-shrink: 0; }
+
+.raw-context { margin-top: 8px; }
+.raw-context summary { font-size: 12.5px; cursor: pointer; }
+
+/* Live tab — the between-pull insight card + review desk */
+.live-card { margin: 10px 0 18px; padding: 14px 16px; background: #0e1015; border: 1px solid var(--line); border-radius: 8px; }
+.live-head { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; margin-bottom: 8px; }
+.live-kill { color: #5fd07a; font-weight: 700; }
+.live-wipe { color: #e06c5f; font-weight: 700; }
+.live-pulling { color: var(--accent); }
+.live-text { font-size: 14.5px; line-height: 1.55; margin: 8px 0; white-space: pre-wrap; }
+.live-error { color: #e06c5f; font-size: 13.5px; }
+.live-feedback { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
+.tap { background: #15171f; border: 1px solid var(--line); border-radius: 6px; padding: 4px 12px; cursor: pointer; color: var(--ink); font-size: 14px; }
+.tap.on { border-color: var(--accent); background: #1a2030; }
+.live-comment { flex: 1; min-width: 180px; background: #0a0b0e; border: 1px solid var(--line); border-radius: 6px; padding: 5px 9px; color: var(--ink); font-size: 13px; }
+.live-send { background: var(--accent); border: none; border-radius: 6px; padding: 5px 14px; cursor: pointer; color: #0a0b0e; font-weight: 600; }
+.live-send:disabled { opacity: 0.4; cursor: default; }
+.live-tonight { margin-top: 6px; }
+.live-tonight h3 { font-size: 14px; margin: 12px 0 6px; }
+
 /* Trends tab */
 .trends .picker label { color: var(--muted); font-size: 14px; }
 .trends .small { margin: 6px 0 16px; }

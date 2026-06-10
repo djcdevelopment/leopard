@@ -7,6 +7,11 @@ import react from '@vitejs/plugin-react'
 // a thin host instead; this proxy is dev-only.
 export default defineConfig({
   plugins: [react()],
+  test: {
+    environment: 'jsdom',
+    globals: true,
+    setupFiles: ['./src/setupTests.js'],
+  },
   // Build straight into the host's served wwwroot so the shipped bundle can never drift from
   // source (the prior failure: a manual `copy dist → wwwroot` step that got skipped). After a
   // build, still `dotnet build` the host so its staticwebassets manifest picks up the new

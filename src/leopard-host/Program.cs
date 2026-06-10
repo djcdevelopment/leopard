@@ -66,6 +66,49 @@ string ShapeCachePath(string name, DateTime mtimeUtc)
     // v1: per-pull density heatmaps. Version suffix lets a schema bump invalidate via re-parse.
     return Path.Combine(cacheDir, $"{safe}__{mtimeUtc.Ticks}.shape.v1.json");
 }
+string SignalsCachePath(string name, DateTime mtimeUtc)
+{
+    var safe = string.Join("_", name.Split(Path.GetInvalidFileNameChars()));
+    // v1: the six-signal pack per pull (the RaidUI DiagStrip port). See SignalsArtifact.
+    return Path.Combine(cacheDir, $"{safe}__{mtimeUtc.Ticks}.signals.v1.json");
+}
+string AffinityCachePath(string name, DateTime mtimeUtc)
+{
+    var safe = string.Join("_", name.Split(Path.GetInvalidFileNameChars()));
+    // v1: the night's movement-affinity structure (who travels together). See MovementAffinity.
+    return Path.Combine(cacheDir, $"{safe}__{mtimeUtc.Ticks}.affinity.v1.json");
+}
+string PlayersCachePath(string name, DateTime mtimeUtc)
+{
+    var safe = string.Join("_", name.Split(Path.GetInvalidFileNameChars()));
+    // v1: per-pull per-player scores + archetypes (the RaidUI player-* suite). See PlayerScores.
+    return Path.Combine(cacheDir, $"{safe}__{mtimeUtc.Ticks}.players.v1.json");
+}
+
+// Every parsed night's career-input encounters, fanned in (same loop the Roster/wkdelta/career-
+// summary endpoints run inline; the live loop needs it as a callable).
+List<RaidViewEncounter> LoadCareerInputs()
+{
+    var cfg = LoadConfig();
+    var all = new List<RaidViewEncounter>();
+    if (!Directory.Exists(cfg.LogDir)) return all;
+    foreach (var f in new DirectoryInfo(cfg.LogDir).GetFiles("WoWCombatLog*.txt"))
+    {
+        var cc = CareerCachePath(f.Name, f.LastWriteTimeUtc);
+        if (!File.Exists(cc)) continue;
+        try
+        {
+            var encs = JsonSerializer.Deserialize<List<RaidViewEncounter>>(File.ReadAllText(cc), json);
+            if (encs is not null) all.AddRange(encs);
+        }
+        catch { /* skip a corrupt/old artifact */ }
+    }
+    return all;
+}
+
+// The live between-pull loop (Tempo live ingest → evidence → local inference → jsonl record).
+// See docs/live-insight-design-brief.md.
+var live = new LiveSession(LoadConfig, LoadCareerInputs, dataDir);
 
 app.MapGet("/api/health", () => Results.Json(new { ok = true, service = "leopard-host" }));
 
@@ -75,7 +118,20 @@ app.MapPut("/api/config", async (HttpRequest req) =>
     var c = await JsonSerializer.DeserializeAsync<LeopardConfig>(req.Body, json);
     if (c is null || string.IsNullOrWhiteSpace(c.LogDir)) return Results.BadRequest(new { error = "logDir required" });
     SaveConfig(c);
+    live.Restart(); // re-pick the newest log under the (possibly new) dir
     return Results.Json(c, json);
+});
+
+// ── Live (between-pull insight) ── see docs/live-insight-design-brief.md ──
+app.MapGet("/api/live/status", () => Results.Json(live.Status, json));
+app.MapGet("/api/live/insight", () => Results.Json(live.Insight, json));
+app.MapPost("/api/live/feedback", async (HttpRequest req) =>
+{
+    var f = await JsonSerializer.DeserializeAsync<FeedbackRequest>(req.Body, json);
+    if (f is null || string.IsNullOrWhiteSpace(f.InsightId))
+        return Results.BadRequest(new { error = "insightId required" });
+    live.RecordFeedback(f.InsightId, f.Useful, f.Grounded, f.Comment);
+    return Results.Json(new { ok = true });
 });
 
 app.MapGet("/api/logs", () =>
@@ -114,9 +170,12 @@ app.MapPost("/api/parse", async (HttpRequest req) =>
             var traceCache = TraceCachePath(name, mtime);
             var careerCache = CareerCachePath(name, mtime);
             var shapeCache = ShapeCachePath(name, mtime);
+            var signalsCache = SignalsCachePath(name, mtime);
+            var affinityCache = AffinityCachePath(name, mtime);
+            var playersCache = PlayersCachePath(name, mtime);
             // One parse feeds every artifact. Re-derive if ANY is missing, so a night parsed
             // before a surface existed regenerates that surface's artifact on next parse.
-            if (!File.Exists(cache) || !File.Exists(trendsCache) || !File.Exists(traceCache) || !File.Exists(careerCache) || !File.Exists(shapeCache))
+            if (!File.Exists(cache) || !File.Exists(trendsCache) || !File.Exists(traceCache) || !File.Exists(careerCache) || !File.Exists(shapeCache) || !File.Exists(signalsCache) || !File.Exists(affinityCache) || !File.Exists(playersCache))
             {
                 var parse = ParserPipeline.Parse(path);
                 File.WriteAllText(cache, BoxScore.Build(parse), utf8);
@@ -129,6 +188,12 @@ app.MapPost("/api/parse", async (HttpRequest req) =>
                     JsonSerializer.Serialize(EncountersProjection.ToEncounters(parse.Sessions), json), utf8);
                 // Shape: per-pull density heatmaps for this night (needs replay frames).
                 File.WriteAllText(shapeCache, ShapeArtifact.BuildJson(parse, json), utf8);
+                // Signals: the six-signal diagnostic pack per pull (the RaidUI DiagStrip port).
+                File.WriteAllText(signalsCache, SignalsArtifact.BuildJson(parse, json), utf8);
+                // Affinity: the night's movement-group structure (who travels together).
+                File.WriteAllText(affinityCache, MovementAffinity.BuildJson(parse, json), utf8);
+                // Players: per-pull role-weighted scores + archetypes (the player-* suite).
+                File.WriteAllText(playersCache, PlayerScores.BuildJson(parse, json), utf8);
             }
             results.Add(new { name, ok = true, parsed = true });
         }
@@ -181,6 +246,90 @@ app.MapGet("/api/shape/density", (string name) =>
     var cache = ShapeCachePath(name, File.GetLastWriteTimeUtc(path));
     if (!File.Exists(cache)) return Results.NotFound(new { error = "not parsed yet" });
     return Results.Text(File.ReadAllText(cache), "application/json");
+});
+
+// Signals — the six-signal diagnostic pack (spacing / coverage / deathsPerSec / followership /
+// entropy / hpVariance per second, + snaps + aggregates) per pull. The RaidUI DiagStrip port;
+// see docs/signals-artifact-port-brief.md. 404 => parsed before Signals existed (re-parse).
+app.MapGet("/api/signals", (string name) =>
+{
+    var cfg = LoadConfig();
+    var path = Path.Combine(cfg.LogDir, name);
+    if (!File.Exists(path)) return Results.NotFound(new { error = "log not found" });
+    var cache = SignalsCachePath(name, File.GetLastWriteTimeUtc(path));
+    if (!File.Exists(cache)) return Results.NotFound(new { error = "not parsed yet" });
+    return Results.Text(File.ReadAllText(cache), "application/json");
+});
+
+// Players — per-pull role-weighted player scores + archetypes (the RaidUI player-* port).
+// 404 => parsed before Players existed (re-parse). Individual tier — group surfaces first
+// per the product thesis; this serves the future player drill-down.
+app.MapGet("/api/players", (string name) =>
+{
+    var cfg = LoadConfig();
+    var path = Path.Combine(cfg.LogDir, name);
+    if (!File.Exists(path)) return Results.NotFound(new { error = "log not found" });
+    var cache = PlayersCachePath(name, File.GetLastWriteTimeUtc(path));
+    if (!File.Exists(cache)) return Results.NotFound(new { error = "not parsed yet" });
+    return Results.Text(File.ReadAllText(cache), "application/json");
+});
+
+// Affinity — the night's movement-group structure (the RaidUI affinity/clustering port):
+// pairwise co-travel matrix + the emergent groups. 404 => parsed before Affinity existed.
+app.MapGet("/api/affinity", (string name) =>
+{
+    var cfg = LoadConfig();
+    var path = Path.Combine(cfg.LogDir, name);
+    if (!File.Exists(path)) return Results.NotFound(new { error = "log not found" });
+    var cache = AffinityCachePath(name, File.GetLastWriteTimeUtc(path));
+    if (!File.Exists(cache)) return Results.NotFound(new { error = "not parsed yet" });
+    return Results.Text(File.ReadAllText(cache), "application/json");
+});
+
+// Diff — deterministic two-pull comparison (the RaidUI DiffLens port): 4 session metrics +
+// 5 signal-aggregate metrics. Reads the cached career-input + signals artifacts, no re-parse.
+// Both pulls must be the same boss. See PullDiff.
+app.MapGet("/api/diff", (string name, string a, string b) =>
+{
+    var cfg = LoadConfig();
+    var path = Path.Combine(cfg.LogDir, name);
+    if (!File.Exists(path)) return Results.NotFound(new { error = "log not found" });
+    var mtime = File.GetLastWriteTimeUtc(path);
+    var careerCache = CareerCachePath(name, mtime);
+    if (!File.Exists(careerCache)) return Results.NotFound(new { error = "not parsed yet" });
+
+    var encs = JsonSerializer.Deserialize<List<RaidViewEncounter>>(File.ReadAllText(careerCache), json) ?? new();
+    (RaidViewEncounter Enc, RaidViewPull Pull)? Find(string id)
+    {
+        foreach (var e in encs)
+        {
+            var hit = e.Pulls.FirstOrDefault(p => string.Equals(p.Id, id, StringComparison.Ordinal));
+            if (hit is not null) return (e, hit);
+        }
+        return null;
+    }
+    var left = Find(a);
+    var right = Find(b);
+    if (left is null || right is null) return Results.NotFound(new { error = "pull not found" });
+    if (!string.Equals(left.Value.Enc.CareerId, right.Value.Enc.CareerId, StringComparison.Ordinal))
+        return Results.BadRequest(new { error = "cross_encounter", message = "Cannot diff pulls from different bosses" });
+
+    SignalAggregatesDto? AggOf(string pullId)
+    {
+        var sc = SignalsCachePath(name, mtime);
+        if (!File.Exists(sc)) return null;
+        try
+        {
+            var night = JsonSerializer.Deserialize<SignalsNightDto>(File.ReadAllText(sc), json);
+            return night?.Encounters.SelectMany(e => e.Pulls)
+                .FirstOrDefault(p => string.Equals(p.PullId, pullId, StringComparison.Ordinal))?.Signals?.Aggregates;
+        }
+        catch { return null; }
+    }
+
+    var result = PullDiff.Build(left.Value.Enc.Name, left.Value.Enc.Difficulty,
+        left.Value.Pull, right.Value.Pull, AggOf(a), AggOf(b));
+    return Results.Json(result, json);
 });
 
 // Shape — kill-vs-wipe contrast, CAREER-scoped: fanned across every parsed night (like the
@@ -281,7 +430,8 @@ app.MapPost("/api/pick-folder", () =>
         if (dlg.ShowDialog(form) == System.Windows.Forms.DialogResult.OK) picked = dlg.SelectedPath;
     });
     if (picked is null) return Results.Json(new { available = true, cancelled = true });
-    SaveConfig(new LeopardConfig(picked));
+    SaveConfig(LoadConfig() with { LogDir = picked }); // preserve the live-inference fields
+    live.Restart();
     return Results.Json(new { available = true, logDir = picked });
 });
 
@@ -330,6 +480,7 @@ app.UseStaticFiles(new StaticFileOptions
 });
 
 await app.StartAsync();
+live.Start(app.Lifetime.ApplicationStopping);
 
 if (args.Contains("--headless"))
 {
@@ -345,11 +496,14 @@ else
 {
     // Desktop shell: a maximized WebView2 pointed at the in-process host. WinForms +
     // WebView2 require STA, so the UI runs on its own STA thread; main thread waits.
+    // Dev: WebView2 points at Vite (5273) for HMR; Vite proxies /api → 5280 and /ollama → 11434.
+    // Prod: WebView2 points at this host's own static bundle (5280, served from wwwroot).
+    var uiUrl = app.Environment.IsDevelopment() ? "http://localhost:5273/" : "http://localhost:5280/";
     var ui = new Thread(() =>
     {
         System.Windows.Forms.Application.EnableVisualStyles();
         System.Windows.Forms.Application.SetCompatibleTextRenderingDefault(false);
-        System.Windows.Forms.Application.Run(new MainForm("http://localhost:5280/"));
+        System.Windows.Forms.Application.Run(new MainForm(uiUrl));
     });
     ui.SetApartmentState(ApartmentState.STA);
     ui.Start();
@@ -378,5 +532,8 @@ public class MainForm : System.Windows.Forms.Form
     }
 }
 
-record LeopardConfig(string LogDir);
+// LiveInferenceUrl/LiveModel: the between-pull insight endpoint (OpenAI chat-completions shape).
+// Defaults live in LiveSession (llama-server on the 2nd B70, :8080) — null here means "default".
+public record LeopardConfig(string LogDir, string? LiveInferenceUrl = null, string? LiveModel = null);
 record ParseRequest(List<string> Names);
+record FeedbackRequest(string InsightId, bool? Useful, bool? Grounded, string? Comment);
