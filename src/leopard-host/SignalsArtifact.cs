@@ -23,6 +23,13 @@ public sealed record PullSignalsDto(
     IReadOnlyDictionary<string, SignalSeriesDto> Signals,
     IReadOnlyList<SnapDto> Snaps, SignalAggregatesDto Aggregates);
 
+// Read-side shapes for the cached .signals.v1.json (BuildJson's output) — used by /api/diff
+// to fetch a pull's aggregates without re-parsing the night.
+public sealed record SignalsNightDto(IReadOnlyList<SignalsEncounterDto> Encounters);
+public sealed record SignalsEncounterDto(
+    string EncounterId, string EncounterName, string Difficulty, IReadOnlyList<SignalsPullDto> Pulls);
+public sealed record SignalsPullDto(string PullId, int N, string Outcome, PullSignalsDto? Signals);
+
 /// <summary>
 /// The six-signal diagnostic pack, ported from RaidUI's <c>buildPullSignals</c>
 /// (app/server.cjs — the server side of GET /api/pulls/:id/signals, the DiagStrip /

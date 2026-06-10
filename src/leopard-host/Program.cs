@@ -243,6 +243,52 @@ app.MapGet("/api/signals", (string name) =>
     return Results.Text(File.ReadAllText(cache), "application/json");
 });
 
+// Diff — deterministic two-pull comparison (the RaidUI DiffLens port): 4 session metrics +
+// 5 signal-aggregate metrics. Reads the cached career-input + signals artifacts, no re-parse.
+// Both pulls must be the same boss. See PullDiff.
+app.MapGet("/api/diff", (string name, string a, string b) =>
+{
+    var cfg = LoadConfig();
+    var path = Path.Combine(cfg.LogDir, name);
+    if (!File.Exists(path)) return Results.NotFound(new { error = "log not found" });
+    var mtime = File.GetLastWriteTimeUtc(path);
+    var careerCache = CareerCachePath(name, mtime);
+    if (!File.Exists(careerCache)) return Results.NotFound(new { error = "not parsed yet" });
+
+    var encs = JsonSerializer.Deserialize<List<RaidViewEncounter>>(File.ReadAllText(careerCache), json) ?? new();
+    (RaidViewEncounter Enc, RaidViewPull Pull)? Find(string id)
+    {
+        foreach (var e in encs)
+        {
+            var hit = e.Pulls.FirstOrDefault(p => string.Equals(p.Id, id, StringComparison.Ordinal));
+            if (hit is not null) return (e, hit);
+        }
+        return null;
+    }
+    var left = Find(a);
+    var right = Find(b);
+    if (left is null || right is null) return Results.NotFound(new { error = "pull not found" });
+    if (!string.Equals(left.Value.Enc.CareerId, right.Value.Enc.CareerId, StringComparison.Ordinal))
+        return Results.BadRequest(new { error = "cross_encounter", message = "Cannot diff pulls from different bosses" });
+
+    SignalAggregatesDto? AggOf(string pullId)
+    {
+        var sc = SignalsCachePath(name, mtime);
+        if (!File.Exists(sc)) return null;
+        try
+        {
+            var night = JsonSerializer.Deserialize<SignalsNightDto>(File.ReadAllText(sc), json);
+            return night?.Encounters.SelectMany(e => e.Pulls)
+                .FirstOrDefault(p => string.Equals(p.PullId, pullId, StringComparison.Ordinal))?.Signals?.Aggregates;
+        }
+        catch { return null; }
+    }
+
+    var result = PullDiff.Build(left.Value.Enc.Name, left.Value.Enc.Difficulty,
+        left.Value.Pull, right.Value.Pull, AggOf(a), AggOf(b));
+    return Results.Json(result, json);
+});
+
 // Shape — kill-vs-wipe contrast, CAREER-scoped: fanned across every parsed night (like the
 // Roster), because per night a boss is almost always all-kills or all-wipes. Computed live from
 // the small per-night career-input artifacts; `TryBuildWkDelta` resolves the career by careerId.

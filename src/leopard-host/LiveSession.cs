@@ -418,6 +418,7 @@ public sealed class LiveSession
                 // v2b — the six-signal pack (the RaidUI DiagStrip port): healer coverage and
                 // spacing per pull, with the collapse moments (snaps) called out by the second.
                 var covLines = new List<string>();
+                var aggByPull = new Dictionary<string, SignalAggregatesDto>(StringComparer.Ordinal);
                 foreach (var pt in coh.Points)
                 {
                     if (!parse.ReplaysByPullId.TryGetValue(pt.PullId, out var replay) || replay.Frames.Count == 0)
@@ -425,6 +426,7 @@ public sealed class LiveSession
                     PullSignalsDto sig;
                     try { sig = SignalsArtifact.BuildForReplay(replay); }
                     catch { continue; }
+                    aggByPull[pt.PullId] = sig.Aggregates;
                     var a = sig.Aggregates;
                     var line = $"  #{pt.PullN}: coverage avg {a.CoverageAvg * 100:0}%, " +
                                $"min {a.CoverageMin * 100:0}% at {sig.Signals["coverage"].Peak.AtSec}s";
@@ -443,6 +445,29 @@ public sealed class LiveSession
                                   "players within 30yd of a living healer; a snap = sudden coverage " +
                                   "collapse; fragile = seconds below 60% covered):");
                     foreach (var l in covLines) sb.AppendLine(l);
+                }
+
+                // The diff port (RaidUI DiffLens): contrast the just-ended pull against the best
+                // prior pull tonight — any kill, else the deepest wipe. The single most pointed
+                // question a between-pull card can ground: "what did the best one have?"
+                var current = coh.Points[^1];
+                var prior2 = coh.Points.Take(coh.Points.Count - 1).ToList();
+                if (prior2.Count > 0)
+                {
+                    var best = prior2.LastOrDefault(p => string.Equals(p.Outcome, "kill", StringComparison.OrdinalIgnoreCase))
+                               ?? prior2.OrderBy(p => p.BossEndPctHp).First();
+                    var pullL = enc.Pulls.FirstOrDefault(p => p.Id == best.PullId);
+                    var pullR = enc.Pulls.FirstOrDefault(p => p.Id == current.PullId);
+                    if (pullL is not null && pullR is not null && best.PullId != current.PullId)
+                    {
+                        var diff = PullDiff.Build(enc.Name, enc.Difficulty, pullL, pullR,
+                            aggByPull.GetValueOrDefault(best.PullId), aggByPull.GetValueOrDefault(current.PullId));
+                        sb.AppendLine($"THIS PULL (#{current.PullN}) vs YOUR BEST TONIGHT (#{best.PullN}, {best.Outcome}):");
+                        sb.AppendLine($"  {diff.RuleHeadline}");
+                        foreach (var m in diff.Metrics.Where(m => m.Wired))
+                            sb.AppendLine($"  {m.Label}: {m.L}{m.Unit} -> {m.R}{m.Unit}" +
+                                          (m.Dir != "flat" ? $" ({m.Dir})" : ""));
+                    }
                 }
             }
             if (TrendsProjection.TryBuildTrendsWindow(encounters, enc.Id, 6, out var win)
