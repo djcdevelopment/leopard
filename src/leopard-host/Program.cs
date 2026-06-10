@@ -78,6 +78,12 @@ string AffinityCachePath(string name, DateTime mtimeUtc)
     // v1: the night's movement-affinity structure (who travels together). See MovementAffinity.
     return Path.Combine(cacheDir, $"{safe}__{mtimeUtc.Ticks}.affinity.v1.json");
 }
+string PlayersCachePath(string name, DateTime mtimeUtc)
+{
+    var safe = string.Join("_", name.Split(Path.GetInvalidFileNameChars()));
+    // v1: per-pull per-player scores + archetypes (the RaidUI player-* suite). See PlayerScores.
+    return Path.Combine(cacheDir, $"{safe}__{mtimeUtc.Ticks}.players.v1.json");
+}
 
 // Every parsed night's career-input encounters, fanned in (same loop the Roster/wkdelta/career-
 // summary endpoints run inline; the live loop needs it as a callable).
@@ -166,9 +172,10 @@ app.MapPost("/api/parse", async (HttpRequest req) =>
             var shapeCache = ShapeCachePath(name, mtime);
             var signalsCache = SignalsCachePath(name, mtime);
             var affinityCache = AffinityCachePath(name, mtime);
+            var playersCache = PlayersCachePath(name, mtime);
             // One parse feeds every artifact. Re-derive if ANY is missing, so a night parsed
             // before a surface existed regenerates that surface's artifact on next parse.
-            if (!File.Exists(cache) || !File.Exists(trendsCache) || !File.Exists(traceCache) || !File.Exists(careerCache) || !File.Exists(shapeCache) || !File.Exists(signalsCache) || !File.Exists(affinityCache))
+            if (!File.Exists(cache) || !File.Exists(trendsCache) || !File.Exists(traceCache) || !File.Exists(careerCache) || !File.Exists(shapeCache) || !File.Exists(signalsCache) || !File.Exists(affinityCache) || !File.Exists(playersCache))
             {
                 var parse = ParserPipeline.Parse(path);
                 File.WriteAllText(cache, BoxScore.Build(parse), utf8);
@@ -185,6 +192,8 @@ app.MapPost("/api/parse", async (HttpRequest req) =>
                 File.WriteAllText(signalsCache, SignalsArtifact.BuildJson(parse, json), utf8);
                 // Affinity: the night's movement-group structure (who travels together).
                 File.WriteAllText(affinityCache, MovementAffinity.BuildJson(parse, json), utf8);
+                // Players: per-pull role-weighted scores + archetypes (the player-* suite).
+                File.WriteAllText(playersCache, PlayerScores.BuildJson(parse, json), utf8);
             }
             results.Add(new { name, ok = true, parsed = true });
         }
@@ -248,6 +257,19 @@ app.MapGet("/api/signals", (string name) =>
     var path = Path.Combine(cfg.LogDir, name);
     if (!File.Exists(path)) return Results.NotFound(new { error = "log not found" });
     var cache = SignalsCachePath(name, File.GetLastWriteTimeUtc(path));
+    if (!File.Exists(cache)) return Results.NotFound(new { error = "not parsed yet" });
+    return Results.Text(File.ReadAllText(cache), "application/json");
+});
+
+// Players — per-pull role-weighted player scores + archetypes (the RaidUI player-* port).
+// 404 => parsed before Players existed (re-parse). Individual tier — group surfaces first
+// per the product thesis; this serves the future player drill-down.
+app.MapGet("/api/players", (string name) =>
+{
+    var cfg = LoadConfig();
+    var path = Path.Combine(cfg.LogDir, name);
+    if (!File.Exists(path)) return Results.NotFound(new { error = "log not found" });
+    var cache = PlayersCachePath(name, File.GetLastWriteTimeUtc(path));
     if (!File.Exists(cache)) return Results.NotFound(new { error = "not parsed yet" });
     return Results.Text(File.ReadAllText(cache), "application/json");
 });
