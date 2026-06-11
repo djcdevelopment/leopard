@@ -30,8 +30,15 @@ and a local **Ollama** provider for inference. Specialized inference runtimes
   trajectory + the all-time career) sent to a local OpenAI-style endpoint, reviewed on a card
   with two named feedback taps (*useful* / *grounded*). Every event lands in
   `live-insight.jsonl` — replayable, and the file bridge for over-the-game overlay delivery.
+- **Explorer** — the knowledge-library IDE (the query builder made visible): a tree of
+  knowledge objects (the ported RaidUI math — six-signal Pulse, Cohesion graph, player-score
+  Reaction spread, Pull diff live; the rest ghosted until their endpoints land), composed into
+  a **compiled.context** slice-XML contract you watch assemble (digest + per-slice token
+  weights), shaped per-slice in a Properties inspector, and run as an **Investigation**
+  against the local model. Same display==send guarantee as Ask — the editor shows the exact
+  bytes sent.
 
-All seven surfaces are computed in-process via Tempo (`Tempo.Core` parser + `Tempo.Projections`)
+All eight surfaces are computed in-process via Tempo (`Tempo.Core` parser + `Tempo.Projections`)
 and cached at parse time — no running engine, nothing leaves your PC.
 
 ## Layout
@@ -45,13 +52,17 @@ src/leopard-host/   .NET — WinForms + WebView2 + in-process Kestrel. The doubl
                     MovementAffinity / FormationSegments / PlayerScores / ParticipantMeters /
                     PullDivergence — the full RaidUI math port (ADR-0005).
                     LiveSession.cs — the between-pull insight brain on Tempo's live ingest (ADR-0006).
+                    Serves the UI from an exe-relative wwwroot, copied to bin on build (ADR-0008).
 src/leopard-host.Tests/  xUnit (62 tests) — CareerRoster aggregation, PipelineTrace conservation/
                     parity, and per-module invariant suites for every ported analysis module,
                     against Tempo's committed combat-log fixtures + RaidUI-derived oracles.
-src/leopard-web/    UI — Vite + React. The seven tabs above; built to a static bundle for ship.
-                    context.test.js — vitest (18 tests): render===serialize byte-exact on all 3
-                    zoom shapes; determinism; frozen-value mutation rejection; SHA-256 validation.
+src/leopard-web/    UI — Vite + React. The eight tabs above; built to a static bundle for ship.
+                    vitest (37 tests): context.test.js (render===serialize byte-exact, all 3
+                    zoom shapes), knowledge.test.js + contract.test.js (Explorer registry +
+                    slice-contract compiler: golden XML, digest stability, canonical ordering).
                     lens.js — the career lens composer (property palette → versioned XML).
+                    knowledge.js / contract.js — the Explorer's object registry + slice
+                    compiler (ADR-0007); Explorer*.jsx — the knowledge-IDE surface.
 tools/              make-boxscore.mjs — standalone box-score generator (the host does this in C#).
 dependencies/       tempo-engine/seam.md — how Leopard reaches the Tempo engine.
 docs/               product-vision.md, feature-order.md, career-roster.md, pipeline-explorer.md,
@@ -59,7 +70,7 @@ docs/               product-vision.md, feature-order.md, career-roster.md, pipel
                     (versioned property palette for the query builder — disk-confirmed),
                     query-builder-design-prompt.md, rack-design-prompt.md (authoring surface),
                     live-insight-design-brief.md, signals-artifact-port-brief.md,
-                    adr/ (ADR-0001..0006).
+                    adr/ (ADR-0001..0008).
 ```
 
 ## Dev
@@ -76,12 +87,13 @@ dotnet test src/leopard-host.Tests
 # UI hot-reload (optional; proxies /api + /ollama to the host) — http://localhost:5273
 cd src/leopard-web; npm install; npm run dev
 
-# web unit tests (vitest; 18 tests — CanonicalContext display==send invariant)
+# web unit tests (vitest; 37 tests — CanonicalContext invariant + Explorer registry/compiler)
 cd src/leopard-web; npm test
 
 # build the shipped UI bundle into the host (vite outputs straight to wwwroot):
 cd src/leopard-web; npm run build      # -> ../leopard-host/wwwroot
-dotnet build src/leopard-host          # refresh the static-assets manifest for the new asset hashes
+dotnet build src/leopard-host          # REQUIRED: copies wwwroot into bin (the exe serves the
+                                       # bin copy — skipping this serves stale assets; ADR-0008)
 ```
 
 **Requires:** .NET 9 SDK · Node 20+ · local Ollama with a model pulled

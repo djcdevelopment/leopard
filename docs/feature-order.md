@@ -97,6 +97,26 @@ quality + snaps + named-offender attribution), `MovementAffinity` + `CoverageGap
 artifacts (`.signals.v1.json`, `.players.v1.json`, `.affinity.v1.json`). xUnit suite 9 → **62**.
 The RaidUI port audit is **closed** — remaining JS deliberately not ported, with reasons.
 
+### Shipped — Explorer (knowledge-library IDE, phase 1) — built 2026-06-11 (`0ecba13`)
+The eighth surface, and the **compose rung generalized**: where the career lens composed nine
+roster properties, the Explorer composes *knowledge objects* — the ported RaidUI math as
+selectable, shapeable context slices. Design source: Derek's mockup (HomeSite-2.5a-1997 IDE
+density in Leopard's palette). Three panes: a **knowledge tree** (`knowledge.js` registry —
+Pulse/six signals, Cohesion graph, Reaction spread/player scores, Pull diff **live**; the full
+taxonomy ghosted with `status:'ghost'` so phase 2 only flips entries), a **compiled.context
+editor** (`contract.js` — slice XML `<context><pull><slice object scope rep agg time tok/>`
+with lens.js canonicalization + digest-over-inner rules, display-only payload folding) with
+**Run Investigation** through the same `buildMessages`/`chatStream` path AskPanel uses
+(display==send structural via `ContextBuilder`), and a **Properties inspector** (provenance
+metadata from the registry; slice dropdowns recompile digest/tok live — real payload shaping
+where cheap, honest annotations otherwise; RaidUI-style previews). vitest 18 → **37**.
+ADR-0007 (client-side slice compiler), ADR-0008 (exe-relative wwwroot).
+
+**Phase 2 (planned):** `/api/coverage` / `/api/segments` / `/api/classify` endpoints + caches
+(the C# modules exist and are tested — plumbing only), then ghost→live flips; Movement meters
+and Shape are cheap flips (data already served). Plan:
+`C:\Users\derek\.claude\plans\jaunty-coalescing-pine.md`.
+
 ### Later
 - The **authoring** surface — making pipeline nodes / projections swappable (the Rack), the
   destination the read-only Explorer is the on-ramp to. Design prompt: `docs/rack-design-prompt.md`.
@@ -108,6 +128,7 @@ The RaidUI port audit is **closed** — remaining JS deliberately not ported, wi
 
 ## The throughline
 Replay = evidence · Shape = perspective · Trends = context · Ask = exploration ·
-**Pipeline Explorer = how it all connects** · **Live = the loop closing in real time.**
+**Pipeline Explorer = how it all connects** · **Live = the loop closing in real time** ·
+**Explorer = the question, composed** (the query-builder north star made visible).
 Each drills down to the layer beneath; together they teach the chain by *delight*, never
 by lecture.
