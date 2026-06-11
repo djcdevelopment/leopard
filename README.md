@@ -57,9 +57,10 @@ src/leopard-host.Tests/  xUnit (62 tests) — CareerRoster aggregation, Pipeline
                     parity, and per-module invariant suites for every ported analysis module,
                     against Tempo's committed combat-log fixtures + RaidUI-derived oracles.
 src/leopard-web/    UI — Vite + React. The eight tabs above; built to a static bundle for ship.
-                    vitest (37 tests): context.test.js (render===serialize byte-exact, all 3
-                    zoom shapes), knowledge.test.js + contract.test.js (Explorer registry +
-                    slice-contract compiler: golden XML, digest stability, canonical ordering).
+                    vitest (49 tests): context.test.js (render===serialize byte-exact, all 3
+                    zoom shapes), lens.test.js (career lens: canonical order, digest, provenance,
+                    confidence, null-skip), knowledge.test.js + contract.test.js (Explorer
+                    registry + slice-contract compiler: golden XML, digest stability, ordering).
                     lens.js — the career lens composer (property palette → versioned XML).
                     knowledge.js / contract.js — the Explorer's object registry + slice
                     compiler (ADR-0007); Explorer*.jsx — the knowledge-IDE surface.
@@ -87,7 +88,7 @@ dotnet test src/leopard-host.Tests
 # UI hot-reload (optional; proxies /api + /ollama to the host) — http://localhost:5273
 cd src/leopard-web; npm install; npm run dev
 
-# web unit tests (vitest; 37 tests — CanonicalContext invariant + Explorer registry/compiler)
+# web unit tests (vitest; 49 tests — CanonicalContext + career lens + Explorer registry/compiler)
 cd src/leopard-web; npm test
 
 # build the shipped UI bundle into the host (vite outputs straight to wwwroot):
