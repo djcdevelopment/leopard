@@ -206,6 +206,12 @@ a written spec. If it isn't in the suite by the next retro, the next retro shoul
 - **The called-wipe specimen is sitting unexamined.** The model coached through an explicit
   "don't coach" gate, the jsonl captured it perfectly, and no follow-up exists yet — no prompt
   iteration, no critic-loop issue filed. The corpus is collecting; nothing is consuming it.
+- **The first draft of this retro missed the discoverlay half entirely.** The overlay consumer
+  (`5614536` — InsightState + panel + smoke-verified card) shipped the same evening, in a sibling
+  repo, and was even recorded in the session memory — but the retro was scoped from this repo's
+  git log alone and listed overlay delivery as future work until the operator corrected it.
+  Cross-repo stretches need cross-repo scope discovery: when a brief names sibling repos
+  (Tempo, discoverlay), the retro should check their git logs too.
 
 ### Patterns to repeat
 
@@ -270,8 +276,14 @@ a written spec. If it isn't in the suite by the next retro, the next retro shoul
 - **Start the critic-loop consumer with the specimens in hand** — the called-wipe
   prompt-compliance failure is already in the jsonl, fully replayable. See
   `D:\work\leopard\docs\live-insight-design-brief.md` §4 and the vllama substrate.
-- **discoverlay overlay delivery** — separate repo; the composer tails `live-insight.jsonl`;
-  the `encounter started` hide cue (`d2afa53`) is already emitting.
+- **discoverlay overlay delivery — already shipped and smoke-verified end-to-end** (corrected
+  after the operator flagged it): `D:\work\discoverlay` commit `5614536` (2026-06-09 19:37 — the
+  same minute as Leopard's `d2afa53` hide cue; the bridge's producer and consumer were built in
+  lockstep). `InsightState` projector over `live-insight.jsonl` (combat-aware hide, feedback
+  joined by `insightId`), `build_insight_panel`, a 14-check smoke harness, and a committed
+  rendered card (`snap-insight.png`) — verified synthetic encounter → pull facts → evidence →
+  real inference on the 2nd B70 → card via `hud.exe --snapshot`. Still open on that side:
+  feedback hotkeys (Ctrl+J/K taps), the Discord bridge one-liner, and real-raid-night validation.
 - **Iterate the Rack prompt** (`D:\work\leopard\docs\rack-design-prompt.md`) — section 5's
   gating questions still decide the authoring-surface timeline.
 - **Check the host `/ollama` proxy target** — memory flags it may still point at `:11434`
