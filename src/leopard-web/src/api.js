@@ -49,6 +49,42 @@ export async function getTrace(name) {
   return r.json()
 }
 
+// Signals — the six-signal diagnostic pack per pull (spacing / coverage / deathsPerSec /
+// followership / entropy / hpVariance + snaps + aggregates). 404 => parsed before Signals
+// existed — re-parse in Setup.
+export async function getSignals(name) {
+  const r = await fetch(`${A}/signals?name=${encodeURIComponent(name)}`)
+  if (r.status === 404) return null
+  if (!r.ok) throw new Error(`signals HTTP ${r.status}`)
+  return r.json()
+}
+
+// Players — per-pull role-weighted scores + archetypes. 404 => re-parse in Setup.
+export async function getPlayers(name) {
+  const r = await fetch(`${A}/players?name=${encodeURIComponent(name)}`)
+  if (r.status === 404) return null
+  if (!r.ok) throw new Error(`players HTTP ${r.status}`)
+  return r.json()
+}
+
+// Affinity — the night's movement-group structure (matrix + groups + coverage gaps +
+// embedded meters). Night-scoped, not per-pull. 404 => re-parse in Setup.
+export async function getAffinity(name) {
+  const r = await fetch(`${A}/affinity?name=${encodeURIComponent(name)}`)
+  if (r.status === 404) return null
+  if (!r.ok) throw new Error(`affinity HTTP ${r.status}`)
+  return r.json()
+}
+
+// Diff — deterministic two-pull comparison within one night (same boss). Needs the night
+// name plus both pull ids. 404 => pull/night not found or not parsed.
+export async function getDiff(name, a, b) {
+  const r = await fetch(`${A}/diff?name=${encodeURIComponent(name)}&a=${encodeURIComponent(a)}&b=${encodeURIComponent(b)}`)
+  if (r.status === 404) return null
+  if (!r.ok) throw new Error(`diff HTTP ${r.status}`)
+  return r.json()
+}
+
 // Career-arc grounding — one boss's all-time story as exact-figures text (the zoom above the
 // per-night box score). Mirrors getBoxscore. 404 => no such career.
 export async function getCareerSummary(careerId) {

@@ -14,6 +14,14 @@
     <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.*" />
   </ItemGroup>
 
+  <!-- The Web SDK only copies wwwroot on publish; copy it on build too, so the exe is
+       self-contained from bin (Program.cs pins the content root to the exe's directory —
+       launching from any cwd must serve the bundle, not 404). Pairs with the existing rule:
+       every `npm run build` is followed by `dotnet build src/leopard-host`. -->
+  <ItemGroup>
+    <None Include="wwwroot\**" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
   <!-- Leopard depends on the Tempo ENGINE in-process. Leopard = product, Tempo = engine.
        Tempo.Core = the parser (ParserPipeline). Tempo.Projections = pure, server-free
        projection math (Trends / Shape) extracted from Tempo.Host for consumers like us. -->

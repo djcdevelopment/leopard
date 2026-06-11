@@ -4,7 +4,15 @@ using Tempo.Core.Ingest;
 using Tempo.Host.ViewerApi.Projections;
 using Leopard.Host;
 
-var builder = WebApplication.CreateBuilder(args);
+// Content root = the exe's own directory, NOT the launcher's cwd — a double-clicked or
+// Start-Process'd exe must find its wwwroot next to itself (the csproj copies it to bin).
+// Default content root is Directory.GetCurrentDirectory(), which 404s the whole UI when
+// launched from anywhere else (observed 2026-06-11).
+var builder = WebApplication.CreateBuilder(new WebApplicationOptions
+{
+    Args = args,
+    ContentRootPath = AppContext.BaseDirectory,
+});
 builder.WebHost.ConfigureKestrel(o => o.ListenLocalhost(5280)); // loopback only
 builder.Logging.ClearProviders();
 builder.Services.AddCors(o => o.AddDefaultPolicy(p => p.AllowAnyOrigin().AllowAnyHeader().AllowAnyMethod()));

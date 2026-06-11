@@ -6,6 +6,7 @@ import ShapeTab from './ShapeTab.jsx'
 import LiveTab from './LiveTab.jsx'
 import PipelineTab from './PipelineTab.jsx'
 import RosterTab from './RosterTab.jsx'
+import ExplorerTab from './ExplorerTab.jsx'
 import { getLogs } from './api.js'
 import { detectProvider, loadedModels } from './provider.js'
 
@@ -60,7 +61,7 @@ export default function App() {
   const hasParsed = parsedLogs.length > 0
 
   return (
-    <div className="wrap">
+    <div className={tab === 'explorer' ? 'wrap wrap-wide' : 'wrap'}>
       <header>
         <h1>🐆 Leopard</h1>
         <p className="tagline">Ask your own raid — on your own machine.</p>
@@ -86,6 +87,7 @@ export default function App() {
         <button className={tab === 'shape' ? 'active' : ''} onClick={() => setTab('shape')}>Shape</button>
         <button className={tab === 'live' ? 'active' : ''} onClick={() => setTab('live')}>Live</button>
         <button className={tab === 'pipeline' ? 'active' : ''} onClick={() => setTab('pipeline')}>Pipeline</button>
+        <button className={tab === 'explorer' ? 'active' : ''} onClick={() => setTab('explorer')}>Explorer</button>
         <button className={tab === 'setup' ? 'active' : ''} onClick={() => setTab('setup')}>Setup / Configuration</button>
       </nav>
 
@@ -95,6 +97,7 @@ export default function App() {
       {tab === 'shape' && <ShapeTab night={selectedNight} hasParsed={hasParsed} />}
       {tab === 'live' && <LiveTab />}
       {tab === 'pipeline' && <PipelineTab night={selectedNight} hasParsed={hasParsed} onOpenTab={setTab} provider={provider} model={model} />}
+      {tab === 'explorer' && <ExplorerTab night={selectedNight} hasParsed={hasParsed} provider={provider} model={model} />}
       {tab === 'leopard' && <LeopardTab night={selectedNight} hasParsed={hasParsed} provider={provider} model={model} setModel={setModel} />}
 
       <footer className="foot">
