@@ -1,6 +1,8 @@
 # ADR-0007: Explorer slice contracts compile client-side over cached artifacts
 
-Status: Proposed (2026-06-11)
+Status: Accepted (2026-06-11 — same-day phase 2 added five live objects through the
+registry-flip + serializer path with zero changes to the compiler envelope or digest rules;
+the design held under its first real extension)
 
 ## Context
 

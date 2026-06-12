@@ -112,10 +112,18 @@ metadata from the registry; slice dropdowns recompile digest/tok live — real p
 where cheap, honest annotations otherwise; RaidUI-style previews). vitest 18 → **37**.
 ADR-0007 (client-side slice compiler), ADR-0008 (exe-relative wwwroot).
 
-**Phase 2 (planned):** `/api/coverage` / `/api/segments` / `/api/classify` endpoints + caches
-(the C# modules exist and are tested — plumbing only), then ghost→live flips; Movement meters
-and Shape are cheap flips (data already served). Plan:
-`C:\Users\derek\.claude\plans\jaunty-coalescing-pine.md`.
+**Phase 2 — shipped (built 2026-06-11 evening, `d267c39`):** the ghosts lit up. Three new
+host endpoints + parse-time caches (`/api/coverage` — per-second quality series + snaps via
+a new `CoverageTimeline.ToSeconds` downsample, frames stay in-process; `/api/segments` —
+movement phases; `/api/classify` — `ClassifyArtifact`, verdict-or-explicit-reason per pull,
+never silence) and **five** registry flips: Coverage timeline, Formation segments, Wipe cause,
+Movement meters (rides the affinity payload via a documented `meters` pseudo-api — zero new
+fetches), and Shape (the existing density grid serialized as hotspot/concentration stats).
+Each flip = serializer + preview + real slice options where cheap (coverage `rep`, classify
+`rep`, meters `scope`/`agg`). Nine of sixteen knowledge objects live; the remaining ghosts
+(moments, mechanics, raw/replay/reconciled substrates, phase-reached) need endpoints that
+don't exist yet — design conversations, not plumbing. vitest 49 → **57**, xUnit 62 → **67**;
+endpoints verified live; a latent `fmt()` trailing-zero bug caught and pinned on the way.
 
 ### Later
 - The **authoring** surface — making pipeline nodes / projections swappable (the Rack), the

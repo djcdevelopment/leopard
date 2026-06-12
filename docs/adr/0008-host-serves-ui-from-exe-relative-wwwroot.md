@@ -1,6 +1,7 @@
 # ADR-0008: The host serves the UI from an exe-relative wwwroot (content root = AppContext.BaseDirectory)
 
-Status: Proposed (2026-06-11)
+Status: Accepted (2026-06-11 — exercised by every launch since the fix, including the
+phase-2 verification launches; no regressions)
 
 ## Context
 
