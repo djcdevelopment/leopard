@@ -112,7 +112,16 @@ export async function chatStream({ model, messages, onToken, signal, temperature
     body: JSON.stringify(body),
     signal,
   })
-  if (!res.ok || !res.body) throw new Error(`chat failed: HTTP ${res.status}`)
+  if (!res.ok || !res.body) {
+    // Surface the provider's own message — "HTTP 400" alone hid a context-size rejection
+    // (observed 2026-06-11: llama-server's exceed_context_size_error).
+    let detail = ''
+    try {
+      const text = await res.text()
+      detail = JSON.parse(text)?.error?.message || text
+    } catch { /* keep the bare status */ }
+    throw new Error(`chat failed: HTTP ${res.status}${detail ? ` — ${detail.slice(0, 300)}` : ''}`)
+  }
 
   const reader = res.body.getReader()
   const decoder = new TextDecoder()
