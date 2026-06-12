@@ -15,21 +15,33 @@ export default function App() {
   const [parseNonce, setParseNonce] = useState(0)
   const [parsedLogs, setParsedLogs] = useState([])
   const [selectedNight, setSelectedNight] = useState('')
-  // Provider/model are app-level (detected once per load) so every Ask surface — the Leopard tab
-  // and the Pipeline terminus — shares one selection. See the zoom plan.
+  // Provider/model are app-level so every Ask surface — the Leopard tab and the Pipeline
+  // terminus — shares one selection. Detection RETRIES every 5 s while the provider is
+  // absent: a local model server often finishes loading after the app window opens
+  // (observed 2026-06-11 with the B70 llama-server), and a one-shot detect would dead-end
+  // on a banner until an app restart.
   const [provider, setProvider] = useState({ status: 'checking', models: [] })
   const [model, setModel] = useState('')
 
   useEffect(() => {
-    detectProvider().then(async (p) => {
+    let alive = true
+    let timer = null
+    async function detect() {
+      const p = await detectProvider()
+      if (!alive) return
       setProvider({ status: p.reachable ? 'ready' : 'absent', models: p.models, error: p.error })
       if (p.reachable && p.models?.length) {
         const loaded = await loadedModels()
+        if (!alive) return
         const warm = loaded.find((m) => p.models.includes(m))
         const pref = [/b70/i, /mistral/i, /qwen2\.5[:\-]?14b/i, /:14b/i, /qwen2\.5[:\-]?32b/i, /:32b/i, /instruct/i]
         setModel(warm || pref.map((re) => p.models.find((m) => re.test(m))).find(Boolean) || p.models[0])
+      } else {
+        timer = setTimeout(detect, 5000)
       }
-    })
+    }
+    detect()
+    return () => { alive = false; clearTimeout(timer) }
   }, [])
 
   // Single source of truth for the parsed-night list + the chosen night, shared across the

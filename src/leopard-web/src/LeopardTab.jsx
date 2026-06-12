@@ -15,7 +15,7 @@ export default function LeopardTab({ provider, model, setModel, night, hasParsed
 function ProviderBar({ provider, model, setModel }) {
   if (provider.status === 'checking') return <div className="bar checking">Looking for a local model…</div>
   if (provider.status === 'absent')
-    return <div className="bar absent">No local model found — start Ollama and reload. Your data never leaves your machine.</div>
+    return <div className="bar absent">No local model found — start your model provider (Ollama, or the configured endpoint); Leopard will pick it up automatically. Your data never leaves your machine.</div>
   return (
     <div className="bar ready">
       Local model:&nbsp;
