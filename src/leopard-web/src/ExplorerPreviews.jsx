@@ -194,6 +194,48 @@ export function ShapePreview({ density }) {
   )
 }
 
+export function NightArcPreview({ night, encounterName, pullN }) {
+  const enc = (night?.encounters || []).find((e) => e.name === encounterName)
+  if (!enc) return <p className="muted small">No night arc for this boss — re-parse in Setup.</p>
+  const deaths = enc.deathsPerPull || []
+  const max = Math.max(1, ...deaths)
+  const barW = Math.max(3, Math.min(14, Math.floor(168 / Math.max(1, deaths.length))))
+  return (
+    <div className="ex-preview">
+      <svg width={deaths.length * barW} height="36" className="ex-arcbars">
+        {deaths.map((d, i) => (
+          <rect key={i} x={i * barW} y={36 - (d / max) * 32 - 2} width={barW - 1} height={(d / max) * 32 + 2}
+            fill="var(--accent)" fillOpacity={i + 1 === pullN ? 1 : 0.35}>
+            <title>{`pull ${i + 1}: ${d} deaths${i + 1 === pullN ? ' (selected)' : ''}`}</title>
+          </rect>
+        ))}
+      </svg>
+      <p className="muted small">
+        deaths per pull · selected pull highlighted{enc.killed ? ' · KILLED this night' : enc.deathTrend ? ` · ${enc.deathTrend}` : ''}
+      </p>
+    </div>
+  )
+}
+
+export function TrendPreview({ trends, encounterName }) {
+  const enc = (trends?.encounters || []).find((e) => e.encounterName === encounterName)
+  if (!enc) return <p className="muted small">No trend window for this boss — re-parse in Setup.</p>
+  const win = (enc.windows && (enc.windows[enc.defaultWindow] || enc.windows[6])) || enc.window
+  const rows = win?.ruleRows || []
+  if (rows.length === 0) return <p className="muted small">No rule rows in the window.</p>
+  return (
+    <div className="ex-preview">
+      <p className="muted small">last {win.windowSize} pulls</p>
+      {rows.map((r) => (
+        <div className="ex-diff-row" key={r.label}>
+          <span className="ex-diff-label">{r.label}</span>
+          <span className="mono">{String(r.value)} <span className={`ex-delta ${r.dir === 'better' ? 'better' : r.dir === 'worse' ? 'worse' : 'flat'}`}>{r.delta}</span></span>
+        </div>
+      ))}
+    </div>
+  )
+}
+
 export function DiffPreview({ diff }) {
   if (!diff) return <p className="muted small">Pick a compare pull to see the diff.</p>
   return (

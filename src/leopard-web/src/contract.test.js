@@ -146,6 +146,43 @@ const NIGHT = {
       }],
     }],
   },
+  // The structured box score (.night.v1.json) — the night-arc slice substrate.
+  night: {
+    zone: 'Liberation of Undermine', date: '2026-06-06', difficulty: 'Mythic', playerCount: 20,
+    bossesKilled: 0, bossesInProgress: 1,
+    encounters: [{
+      name: 'Vexie & the Geargrinders', difficulty: 'Mythic', killed: false, pullCount: 8,
+      killDurationMs: null, killDeaths: null,
+      deathsPerPull: [4, 6, 3, 5, 7, 3, 5, 2],
+      deathTrend: 'deaths held roughly steady (~4 per pull; peak 7)',
+      executePulls: [], bestProgressPct: 18.6,
+      fastWipePulls: [5], longestPulls: [{ n: 7, durationMs: 443080 }],
+      pulls: [
+        { n: 6, outcome: 'wipe', deaths: 3, durationMs: 380000, bossEndPctHp: 24.0 },
+        { n: 7, outcome: 'wipe', deaths: 5, durationMs: 443080, bossEndPctHp: 18.6 },
+      ],
+    }],
+  },
+  // The trends artifact (windows keyed by size, defaultWindow selects).
+  trends: {
+    encounters: [{
+      encounterId: 'enc-1', encounterName: 'Vexie & the Geargrinders', difficulty: 'Mythic',
+      defaultWindow: 6,
+      windows: {
+        6: {
+          windowSize: 6,
+          ruleRows: [
+            { label: 'Avg deaths / pull', value: '4.2', dir: 'better', delta: '-1.3' },
+            { label: 'Best progress', value: '18.6%', dir: 'better', delta: '-5.4pp' },
+            { label: 'Avg pull duration', value: '05:51', dir: 'flat', delta: '+2s' },
+          ],
+        },
+      },
+      coherences: {
+        6: { points: [{ followershipMean: 0.412, entropyMean: 0.231, peakSpeed: 14.2 }] },
+      },
+    }],
+  },
   diff: {
     encounterName: 'Vexie & the Geargrinders', encounterDifficulty: 'Mythic',
     left: { id: 'pull-6', n: 6 }, right: { id: 'pull-7', n: 7 },
@@ -336,18 +373,63 @@ describe('slice-contract compiler', () => {
     }
   })
 
-  it('a nine-slice contract compiles with a stable digest', () => {
+  // ── over-time slices ───────────────────────────────────────────────────────
+
+  const PULLREF = { pullId: 'pull-7', n: 7, encounterName: 'Vexie & the Geargrinders', difficulty: 'Mythic' }
+
+  it('night arc anchors the selected pull inside the boss-night sequence', () => {
+    const body = serializeSlice(getObject('progression.encounter@v1'),
+      { scope: 'boss', rep: 'arc', agg: 'none', time: 'whole night' }, NIGHT, PULLREF)
+    expect(body).toContain('night result: 0 killed / 1 in progress')
+    expect(body).toContain('this boss: Vexie & the Geargrinders (Mythic) - 8 pulls, not killed this night')
+    expect(body).toContain('deaths per pull (1..8): 4, 6, 3, 5, 7, 3, 5, 2')
+    expect(body).toContain('death trend: deaths held roughly steady')
+    expect(body).toContain('best progress: lowest boss HP reached was 19%')
+    expect(body).toContain('very fast wipes (<=30s): pulls 5')
+    expect(body).toContain('THE SELECTED PULL in that sequence: pull 7 of 8 - wipe, 5 deaths, 07:23, ended at boss 19% HP')
+  })
+
+  it('trend window serializes rule rows; rep=rules drops the coherence block', () => {
+    const full = serializeSlice(getObject('trend.window@v1'),
+      { scope: 'boss', rep: 'rules + coherence', agg: 'none', time: 'recent window' }, NIGHT, PULLREF)
+    expect(full).toContain('recent form: last 6 pulls on Vexie & the Geargrinders (Mythic)')
+    expect(full).toContain('Avg deaths / pull: 4.2 (better -1.3)')
+    expect(full).toContain('Avg pull duration: 05:51 (flat +2s)')
+    expect(full).toContain('followership (how together the raid moves): 0.412')
+    expect(full).toContain('peak speed: 14.2 yd/s')
+    const rules = serializeSlice(getObject('trend.window@v1'),
+      { scope: 'boss', rep: 'rules', agg: 'none', time: 'recent window' }, NIGHT, PULLREF)
+    expect(rules).not.toContain('followership')
+    expect(rules).toContain('Avg deaths / pull: 4.2')
+  })
+
+  it('over-time slices serialize explicit absence when their artifacts are missing', () => {
+    const empty = { ...NIGHT, night: null, trends: null }
+    expect(serializeSlice(getObject('progression.encounter@v1'), {}, empty, PULLREF))
+      .toContain('(no structured night artifact')
+    expect(serializeSlice(getObject('trend.window@v1'), { rep: 'rules + coherence' }, empty, PULLREF))
+      .toContain('(no trend window for this boss')
+    const wrongBoss = serializeSlice(getObject('progression.encounter@v1'), {}, NIGHT,
+      { ...PULLREF, encounterName: 'Some Other Boss' })
+    expect(wrongBoss).toContain('not in the night artifact')
+  })
+
+  it('an eleven-slice contract compiles with a stable digest and the pull frame reaches the serializers', () => {
     const all = [
       slice('signals.pull@v1'), slice('players.pull@v1'), slice('affinity.night@v1'),
       slice('diff.pulls@v1', {}, { comparePullId: 'pull-6' }),
       slice('coverage.timeline@v1'), slice('segments.formation@v1'), slice('classify.wipe@v1'),
       slice('meters.movement@v1'), slice('shape.density@v1'),
+      slice('progression.encounter@v1'), slice('trend.window@v1'),
     ]
     const a = buildContract({ ...FRAME, slices: all })
     const b = buildContract({ ...FRAME, slices: [...all].reverse() })
-    expect(a.xml).toContain('slices="9"')
-    expect((a.xml.match(/<slice /g) || []).length).toBe(9)
+    expect(a.xml).toContain('slices="11"')
+    expect((a.xml.match(/<slice /g) || []).length).toBe(11)
     expect(a.digest).toBe(b.digest)
+    // buildContract passes the pull frame through — the night arc found the right boss+pull
+    expect(a.xml).toContain('THE SELECTED PULL in that sequence: pull 7 of 8')
+    expect(a.xml).toContain('recent form: last 6 pulls')
   })
 
   it('escapes attribute values and payload bytes', () => {

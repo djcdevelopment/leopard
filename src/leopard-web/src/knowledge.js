@@ -215,11 +215,32 @@ export const KNOWLEDGE_OBJECTS = [
     description: 'One pull as the reconciler settled it: outcome, deaths, duration, boss end-HP%. The session-metadata backbone.',
   },
   {
-    id: 'progression.encounter@v1', label: 'Reconciled encounter', category: 'PROGRESSION', status: 'ghost', api: null,
+    id: 'progression.encounter@v1', label: 'Reconciled encounter', category: 'PROGRESSION', status: 'live', api: 'night',
     stage: 'Reconcile · 05', truth: 'RECONCILED', confidence: 'high', stream: 'full',
     promptFit: 'high', vizFit: 'med',
-    builtFrom: ['Reconciled pull'], feeds: [],
-    description: 'A boss-night rollup of its pulls. The Trends/Roster substrate, not yet a slice.',
+    sliceOptions: {
+      scope: ['boss'],
+      rep: ['arc'],
+      agg: ['none'],
+      time: ['whole night'],
+    },
+    sliceDefaults: { scope: 'boss', rep: 'arc', agg: 'none', time: 'whole night' },
+    builtFrom: ['Reconciled pull'], feeds: ['Pull diff', 'Evidence item'],
+    description: 'The boss-night rollup: deaths per pull across the whole night, the death trend, best progress, and where the SELECTED pull sits in that sequence — the over-time axis a single-pull snapshot is missing.',
+  },
+  {
+    id: 'trend.window@v1', label: 'Trend window', category: 'PROGRESSION', status: 'live', api: 'trends',
+    stage: 'Derived · 06', truth: 'DERIVED', confidence: 'med', stream: 'derived',
+    promptFit: 'high', vizFit: 'med',
+    sliceOptions: {
+      scope: ['boss'],
+      rep: ['rules + coherence', 'rules'],      // rules = drop the movement-coherence block (real)
+      agg: ['none'],
+      time: ['recent window'],
+    },
+    sliceDefaults: { scope: 'boss', rep: 'rules + coherence', agg: 'none', time: 'recent window' },
+    builtFrom: ['Reconciled encounter'], feeds: ['Evidence item'],
+    description: 'Recent form over the last-N-pull window: kills / avg deaths / best progress / pull duration, each with a better-worse-flat delta, plus movement coherence (followership, entropy, peak speed). The same artifact the Trends tab renders.',
   },
   {
     id: 'progression.phase@v1', label: 'Phase reached', category: 'PROGRESSION', status: 'ghost', api: null,

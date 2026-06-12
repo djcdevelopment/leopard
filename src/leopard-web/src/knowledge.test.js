@@ -33,7 +33,7 @@ describe('knowledge registry', () => {
     for (const o of KNOWLEDGE_OBJECTS) {
       if (o.status === 'live') {
         // 'meters' is the documented pseudo-key (rides the affinity payload).
-        expect(['signals', 'players', 'affinity', 'diff', 'coverage', 'segments', 'classify', 'meters', 'shape']).toContain(o.api)
+        expect(['signals', 'players', 'affinity', 'diff', 'coverage', 'segments', 'classify', 'meters', 'shape', 'night', 'trends']).toContain(o.api)
         expect(o.sliceOptions).toBeTruthy()
         expect(o.sliceDefaults).toBeTruthy()
         // every default is one of its own options
@@ -46,11 +46,11 @@ describe('knowledge registry', () => {
     }
   })
 
-  it('the four phase-1 ports plus the five phase-2 flips are live', () => {
+  it('the phase-1 ports, phase-2 flips, and the over-time slices are live', () => {
     expect(liveObjects().map((o) => o.id).sort()).toEqual([
       'affinity.night@v1', 'classify.wipe@v1', 'coverage.timeline@v1', 'diff.pulls@v1',
-      'meters.movement@v1', 'players.pull@v1', 'segments.formation@v1', 'shape.density@v1',
-      'signals.pull@v1',
+      'meters.movement@v1', 'players.pull@v1', 'progression.encounter@v1',
+      'segments.formation@v1', 'shape.density@v1', 'signals.pull@v1', 'trend.window@v1',
     ])
   })
 

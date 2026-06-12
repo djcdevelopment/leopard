@@ -252,7 +252,77 @@ function serializeShape(nightData, pullId) {
   return lines.join('\n')
 }
 
+function fmtDur(ms) {
+  const t = Math.max(0, Math.round(ms / 1000))
+  return `${String(Math.floor(t / 60)).padStart(2, '0')}:${String(t % 60).padStart(2, '0')}`
+}
+
+// The over-time axis for a single night: the boss-night rollup from the structured box
+// score, anchored on WHERE the selected pull sits in the sequence.
+function serializeNightArc(nightData, pullRef) {
+  const night = nightData.night
+  if (!night) return '(no structured night artifact - re-parse in Setup)'
+  const enc = (night.encounters || []).find((e) =>
+    e.name === pullRef.encounterName && (!e.difficulty || !pullRef.difficulty || e.difficulty === pullRef.difficulty))
+  if (!enc) return `(this boss is not in the night artifact - ${esc(pullRef.encounterName || 'unknown')})`
+  const lines = []
+  lines.push(`night result: ${night.bossesKilled} killed / ${night.bossesInProgress} in progress`)
+  lines.push(`this boss: ${enc.name}${enc.difficulty ? ` (${enc.difficulty})` : ''} - ${enc.pullCount} pull${enc.pullCount === 1 ? '' : 's'}, ${enc.killed ? `KILLED (in ${fmtDur(enc.killDurationMs)}, ${enc.killDeaths} deaths)` : 'not killed this night'}`)
+  if (enc.deathsPerPull?.length) lines.push(`deaths per pull (1..${enc.deathsPerPull.length}): ${enc.deathsPerPull.join(', ')}`)
+  if (enc.deathTrend) lines.push(`death trend: ${enc.deathTrend}`)
+  if (enc.executePulls?.length) lines.push(`best progress: reached boss 0% (execute range) on pulls ${enc.executePulls.join(', ')}`)
+  else if (enc.bestProgressPct != null) lines.push(`best progress: lowest boss HP reached was ${fmt(Math.round(enc.bestProgressPct), 0)}%`)
+  if (enc.fastWipePulls?.length) lines.push(`very fast wipes (<=30s): pulls ${enc.fastWipePulls.join(', ')}`)
+  const sel = (enc.pulls || []).find((p) => p.n === pullRef.n)
+  if (sel) {
+    const hp = sel.bossEndPctHp != null ? `, ended at boss ${fmt(Math.round(sel.bossEndPctHp), 0)}% HP` : ''
+    lines.push(`THE SELECTED PULL in that sequence: pull ${sel.n} of ${enc.pullCount} - ${sel.outcome}, ${sel.deaths} deaths, ${fmtDur(sel.durationMs)}${hp}`)
+  }
+  lines.push('(the reconciled boss-night rollup - exact figures; the selected pull is the one every other slice describes)')
+  return lines.join('\n')
+}
+
+// Recent form over the trends artifact's default window — the same fields the Trends tab
+// and Ask's trend zoom read (context.js serializeTrend), serialized as a slice.
+function serializeTrendWindow(nightData, pullRef, cfg) {
+  const enc = (nightData.trends?.encounters || []).find((e) =>
+    e.encounterName === pullRef.encounterName && (!e.difficulty || !pullRef.difficulty || e.difficulty === pullRef.difficulty))
+  if (!enc) return '(no trend window for this boss - re-parse in Setup)'
+  const win = (enc.windows && (enc.windows[enc.defaultWindow] || enc.windows[6])) || enc.window
+  const coh = (enc.coherences && (enc.coherences[enc.defaultWindow] || enc.coherences[6])) || enc.coherence
+  const n = win?.windowSize || 0
+  const lines = []
+  lines.push(`recent form: last ${n} pull${n === 1 ? '' : 's'} on ${enc.encounterName}${enc.difficulty ? ` (${enc.difficulty})` : ''}`)
+  for (const r of win?.ruleRows || []) {
+    const arrow = r.dir === 'better' ? 'better' : r.dir === 'worse' ? 'worse' : 'flat'
+    lines.push(`${r.label}: ${r.value} (${arrow} ${r.delta})`)
+  }
+  if (cfg.rep !== 'rules') {
+    const pts = coh?.points || []
+    const lastFinite = (key) => {
+      for (let i = pts.length - 1; i >= 0; i--) {
+        const v = pts[i]?.[key]
+        if (typeof v === 'number' && isFinite(v)) return v
+      }
+      return null
+    }
+    const fol = lastFinite('followershipMean')
+    const ent = lastFinite('entropyMean')
+    const spd = lastFinite('peakSpeed')
+    if (fol != null || ent != null || spd != null) {
+      if (fol != null) lines.push(`followership (how together the raid moves): ${fol.toFixed(3)}`)
+      if (ent != null) lines.push(`entropy (how spread their movement is): ${ent.toFixed(3)}`)
+      if (spd != null) lines.push(`peak speed: ${spd.toFixed(1)} yd/s`)
+    } else {
+      lines.push('(no movement-coherence data for these pulls - advanced combat logging off)')
+    }
+  }
+  lines.push('(rule-row deltas over the recent window - exact; better/worse is vs the preceding pulls)')
+  return lines.join('\n')
+}
+
 // One slice's body text, given its registry entry + slice config + fetched night data.
+// pullRef: { pullId, n, encounterName, difficulty, extra } — the selected pull's frame.
 export function serializeSlice(entry, cfg, nightData, pullRef) {
   switch (entry.api) {
     case 'signals': return serializeSignals(nightData, pullRef.pullId, cfg)
@@ -264,6 +334,8 @@ export function serializeSlice(entry, cfg, nightData, pullRef) {
     case 'classify': return serializeClassify(nightData, pullRef.pullId, cfg)
     case 'meters': return serializeMeters(nightData, cfg)
     case 'shape': return serializeShape(nightData, pullRef.pullId)
+    case 'night': return serializeNightArc(nightData, pullRef)
+    case 'trends': return serializeTrendWindow(nightData, pullRef, cfg)
     default: return '(this knowledge object is not wired yet)'
   }
 }
@@ -293,7 +365,8 @@ export function buildContract({ pull, encounterName, difficulty, durationMs, sli
     const entry = getObject(s.objectId)
     if (!entry) continue
     const cfg = { ...(entry.sliceDefaults || {}), ...(s.slice || {}) }
-    const body = serializeSlice(entry, cfg, nightData, { pullId: pull.pullId, extra: s.extra })
+    const body = serializeSlice(entry, cfg, nightData,
+      { pullId: pull.pullId, n: pull.n, encounterName, difficulty, extra: s.extra })
     const tok = estimateTokens(body)
     const attrs = [
       `object="${esc(s.objectId)}"`,

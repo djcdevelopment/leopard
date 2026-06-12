@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
-import { getSignals, getPlayers, getAffinity, getDiff, getCoverage, getSegments, getClassify, getShapeDensity } from './api.js'
+import { getSignals, getPlayers, getAffinity, getDiff, getCoverage, getSegments, getClassify, getShapeDensity, getNight, getTrends } from './api.js'
 import { chatStream } from './provider.js'
 import { buildMessages } from './prompt.js'
 import { ContextBuilder } from './context.js'
@@ -20,7 +20,7 @@ const STAGES = ['Lex', 'Parse', 'Segment', 'Replay', 'Reconcile', 'Derived']
 
 export default function ExplorerTab({ night, hasParsed, provider, model }) {
   // Fetched per-night artifacts (one fetch each per night; null = 404 = pre-artifact parse).
-  const [art, setArt] = useState({ signals: null, players: null, affinity: null, coverage: null, segments: null, classify: null, shape: null, loaded: false })
+  const [art, setArt] = useState({ signals: null, players: null, affinity: null, coverage: null, segments: null, classify: null, shape: null, night: null, trends: null, loaded: false })
   const [pullId, setPullId] = useState('')
   const [contract, setContract] = useState([]) // [{ objectId, slice:{...}, extra:{comparePullId} }]
   const [selectedId, setSelectedId] = useState(null)
@@ -40,7 +40,7 @@ export default function ExplorerTab({ night, hasParsed, provider, model }) {
   useEffect(() => {
     if (!night) return
     let alive = true
-    setArt({ signals: null, players: null, affinity: null, coverage: null, segments: null, classify: null, shape: null, loaded: false })
+    setArt({ signals: null, players: null, affinity: null, coverage: null, segments: null, classify: null, shape: null, night: null, trends: null, loaded: false })
     setDiff(null)
     setAnswer('')
     setStats(null)
@@ -53,8 +53,10 @@ export default function ExplorerTab({ night, hasParsed, provider, model }) {
       getSegments(night).catch(() => null),
       getClassify(night).catch(() => null),
       getShapeDensity(night).catch(() => null),
-    ]).then(([signals, players, affinity, coverage, segments, classify, shape]) => {
-      if (alive) setArt({ signals, players, affinity, coverage, segments, classify, shape, loaded: true })
+      getNight(night).catch(() => null),
+      getTrends(night).catch(() => null),
+    ]).then(([signals, players, affinity, coverage, segments, classify, shape, nightArt, trends]) => {
+      if (alive) setArt({ signals, players, affinity, coverage, segments, classify, shape, night: nightArt, trends, loaded: true })
     })
     return () => { alive = false }
   }, [night])
@@ -108,11 +110,14 @@ export default function ExplorerTab({ night, hasParsed, provider, model }) {
     classify: !!art.classify,
     shape: !!art.shape,
     meters: !!art.affinity, // meters ride inside the affinity payload
+    night: !!art.night,
+    trends: !!art.trends,
   }
 
   const nightData = {
     signals: art.signals, players: art.players, affinity: art.affinity, diff,
     coverage: art.coverage, segments: art.segments, classify: art.classify, shape: art.shape,
+    night: art.night, trends: art.trends,
   }
 
   const compiled = useMemo(() => {

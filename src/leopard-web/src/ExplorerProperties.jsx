@@ -3,6 +3,7 @@ import { findPullIn } from './contract.js'
 import {
   SignalsPreview, PlayersPreview, AffinityPreview, DiffPreview,
   CoveragePreview, SegmentsPreview, ClassifyPreview, MetersPreview, ShapePreview,
+  NightArcPreview, TrendPreview,
 } from './ExplorerPreviews.jsx'
 
 // The right rail: Properties — shape the selected slice. Metadata rows come straight from
@@ -33,6 +34,8 @@ const REAL_KEYS = {
   'classify.wipe@v1': ['rep'],
   'meters.movement@v1': ['scope', 'agg'],
   'shape.density@v1': [],
+  'progression.encounter@v1': [],
+  'trend.window@v1': ['rep'],
 }
 
 export default function ExplorerProperties({
@@ -61,6 +64,8 @@ export default function ExplorerProperties({
     if (entry.api === 'classify') return <ClassifyPreview pull={findPullIn(nightData.classify, pull?.pullId)} />
     if (entry.api === 'meters') return <MetersPreview meters={nightData.affinity?.meters} />
     if (entry.api === 'shape') return <ShapePreview density={findPullIn(nightData.shape, pull?.pullId)?.density} />
+    if (entry.api === 'night') return <NightArcPreview night={nightData.night} encounterName={pull?.encounterName} pullN={pull?.n} />
+    if (entry.api === 'trends') return <TrendPreview trends={nightData.trends} encounterName={pull?.encounterName} />
     return <p className="muted small">No preview until this object is wired (phase 2).</p>
   }
 
