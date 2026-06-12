@@ -71,8 +71,14 @@ assembled list the user watches build before asking. The model receives the vers
 sees the same set of properties in human-readable form. Demystification moment: the grounding chain
 is visible and composable, not hidden behind a text blob.
 
-**Deferred to a future session:** night and trend lenses (require structured C# emit alongside the
-current markdown blobs; documented in `docs/property-inventory.md`).
+**The night lens — shipped 2026-06-11 evening (`58823f9`):** `BoxScore.BuildJson` emits the box
+score's exact figures as structured JSON (`.night.v1.json`, `GET /api/night`) alongside the
+untouched markdown blob; `NIGHT_PALETTE` + `buildNightLens` compose them property-by-property.
+**Ask's default zoom is now a composer** — "Tell Leopard what matters" at the night level, with
+graceful markdown fallback for pre-artifact parse vintages. The single-night story (deaths per
+pull, trend, progress per boss) is the opening prompt's showcase, per the operator's framing.
+**Still deferred:** the trend *lens* for Ask's trend zoom (the trend *slice* shipped in the
+Explorer, `fec78da` — same data, different surface).
 
 ### Shipped — Live + the RaidUI math port (built 2026-06-09 evening, merged 2026-06-10)
 The seventh surface, in two intertwined strands (13 commits, `0bea285..332843d`):
@@ -120,10 +126,26 @@ never silence) and **five** registry flips: Coverage timeline, Formation segment
 Movement meters (rides the affinity payload via a documented `meters` pseudo-api — zero new
 fetches), and Shape (the existing density grid serialized as hotspot/concentration stats).
 Each flip = serializer + preview + real slice options where cheap (coverage `rep`, classify
-`rep`, meters `scope`/`agg`). Nine of sixteen knowledge objects live; the remaining ghosts
-(moments, mechanics, raw/replay/reconciled substrates, phase-reached) need endpoints that
-don't exist yet — design conversations, not plumbing. vitest 49 → **57**, xUnit 62 → **67**;
-endpoints verified live; a latent `fmt()` trailing-zero bug caught and pinned on the way.
+`rep`, meters `scope`/`agg`). vitest 49 → **57**, xUnit 62 → **67**; endpoints verified live;
+a latent `fmt()` trailing-zero bug caught and pinned on the way.
+
+**The over-time slices (same evening, `fec78da`):** the operator's field diagnosis after the
+first live B70 investigations — "even with better data they are pretty vague" — traced to the
+contract being a *snapshot*: one pull, no axis of change. Two PROGRESSION flips off existing
+endpoints fixed it: **Reconciled encounter** (`progression.encounter@v1`, off `/api/night`) —
+the boss-night rollup anchored on *where the selected pull sits in the sequence* — and
+**Trend window** (`trend.window@v1`, off `/api/trends`) — recent-form rule rows + coherence.
+**Eleven of seventeen knowledge objects live**; the remaining ghosts (moments, mechanics,
+raw/replay substrates, phase-reached, reconciled pull, followership breakout) need endpoints
+or design that don't exist yet. vitest → **73**.
+
+**The provider contract, realized (`90e5bf8`):** Ask/Explorer inference is a config entry —
+`askProviderUrl` + `askProviderApi` (`"ollama"` | `"openai"`) in config.json, the host's
+`/llm/*` streaming proxy, dual-protocol `provider.js`. **First live B70 inference through the
+product** this same evening (llama-server :8080, `tempo-b70-second`), which immediately
+field-tested three fixes: detection now retries while absent (`db0ba32`), chat errors carry
+the provider's message (`b0234f8`), and the B70 server needs `-Context` above its 4096
+default for multi-slice contracts (operational, in the launch runbook memory).
 
 ### Later
 - The **authoring** surface — making pipeline nodes / projections swappable (the Rack), the

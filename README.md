@@ -4,9 +4,10 @@ A **reflection engine** for your World of Warcraft raid data: ask questions of y
 combat logs, on your own machine, with a local model. No cloud — nothing leaves your PC.
 
 Leopard is the **product**. It consumes the **Tempo** engine (the combat-log parser) in-process
-and a local **Ollama** provider for inference. Specialized inference runtimes
-(Intel/Vulkan/custom) are Tempo/lab concerns, not product concepts — see
-[`docs/provider-contract.md`](docs/provider-contract.md).
+and a local inference **provider** — Ollama by default, or any OpenAI-shaped endpoint
+(llama-server, vllama) via a config entry (`askProviderUrl`/`askProviderApi`, ADR-0010).
+Specialized inference runtimes (Intel/Vulkan/custom) are Tempo/lab concerns, not product
+concepts — see [`docs/provider-contract.md`](docs/provider-contract.md).
 
 ## What it does
 - **Setup / Configuration** — point at your WoW Logs folder, see your logs in a grid, select
@@ -15,10 +16,12 @@ and a local **Ollama** provider for inference. Specialized inference runtimes
   **career-input**, **shape** (per-pull heatmaps), **signals** (the six-signal pack),
   **affinity** (movement groups + meters), **players** (scores + archetypes), **coverage**
   (healing-coverage quality), **segments** (formation phases), and **classify** (wipe verdicts).
-- **Leopard** — pick a parsed night and zoom (night box score / boss career arc / recent form), then
-  **Ask**. Career zoom shows **"Tell Leopard what matters"** — a property palette that assembles the
-  XML context the model reads, visible as a "What Leopard knows" list. `render()===serialize()`:
-  the displayed evidence and the model payload are the same bytes (`CanonicalContext`).
+- **Leopard** — pick a parsed night and zoom (night / boss career arc / recent form), then
+  **Ask**. Night AND career zooms show **"Tell Leopard what matters"** — a property palette that
+  assembles the XML context the model reads, visible as a "What Leopard knows" list (the night
+  lens composes the structured box score: deaths per pull, trends, progress per boss).
+  `render()===serialize()`: the displayed evidence and the model payload are the same bytes
+  (`CanonicalContext`).
 - **Roster** — every boss you've pulled as one **all-time career** row (attempts, kills, best %,
   direction, a progress arc), fanned in across every parsed night. Heroic/Mythic stay separate.
 - **Trends** — per-boss recent-window deltas (kills / deaths / best progress / duration) plus
@@ -33,13 +36,14 @@ and a local **Ollama** provider for inference. Specialized inference runtimes
   with two named feedback taps (*useful* / *grounded*). Every event lands in
   `live-insight.jsonl` — replayable, and the file bridge for over-the-game overlay delivery.
 - **Explorer** — the knowledge-library IDE (the query builder made visible): a tree of
-  knowledge objects (the ported RaidUI math — **nine live**: six-signal Pulse, Cohesion graph,
-  player-score Reaction spread, Pull diff, Coverage timeline, Formation segments, Wipe cause,
-  Movement meters, Shape; the remaining ghosts await endpoints that don't exist yet), composed
-  into a **compiled.context** slice-XML contract you watch assemble (digest + per-slice token
-  weights), shaped per-slice in a Properties inspector, and run as an **Investigation**
-  against the local model. Same display==send guarantee as Ask — the editor shows the exact
-  bytes sent.
+  knowledge objects (**eleven live**: six-signal Pulse, Cohesion graph, player-score Reaction
+  spread, Pull diff, Coverage timeline, Formation segments, Wipe cause, Movement meters,
+  Shape, and the over-time pair — Reconciled encounter (the boss-night arc, anchored on where
+  the selected pull sits) + Trend window (recent-form deltas); the remaining ghosts await
+  endpoints that don't exist yet), composed into a **compiled.context** slice-XML contract you
+  watch assemble (digest + per-slice token weights), shaped per-slice in a Properties
+  inspector, and run as an **Investigation** against the local model. Same display==send
+  guarantee as Ask — the editor shows the exact bytes sent.
 
 All eight surfaces are computed in-process via Tempo (`Tempo.Core` parser + `Tempo.Projections`)
 and cached at parse time — no running engine, nothing leaves your PC.
@@ -47,9 +51,10 @@ and cached at parse time — no running engine, nothing leaves your PC.
 ## Layout
 ```
 src/leopard-host/   .NET — WinForms + WebView2 + in-process Kestrel. The double-click .exe:
-                    serves the UI + /api (config/logs/parse/boxscore/trends/trace/career/shape/
-                    signals/players/diff/coverage/segments/classify + live/status·insight·
-                    feedback) + an /ollama proxy.
+                    serves the UI + /api (config/logs/parse/boxscore/night/trends/trace/career/
+                    shape/signals/players/diff/coverage/segments/classify + live/status·insight·
+                    feedback) + /llm (streaming proxy to the CONFIGURED provider, ADR-0010;
+                    /ollama kept as the legacy fixed-target alias).
                     References Tempo.Core (parser+ingest) + Tempo.Projections.
                     Artifact builders: BoxScore / TrendsArtifact / PipelineTrace / CareerRoster /
                     ShapeArtifact / SignalsArtifact / PullDiff / WipeClassifier / ClassifyArtifact /
@@ -58,16 +63,17 @@ src/leopard-host/   .NET — WinForms + WebView2 + in-process Kestrel. The doubl
                     cached per night at parse time (chart-resolution series, ADR-0009).
                     LiveSession.cs — the between-pull insight brain on Tempo's live ingest (ADR-0006).
                     Serves the UI from an exe-relative wwwroot, copied to bin on build (ADR-0008).
-src/leopard-host.Tests/  xUnit (67 tests) — CareerRoster aggregation, PipelineTrace conservation/
+src/leopard-host.Tests/  xUnit (68 tests) — CareerRoster aggregation, PipelineTrace conservation/
                     parity, per-module invariant suites for every ported analysis module, and
-                    per-night artifact shape tests (NightArtifactTests), against Tempo's
-                    committed combat-log fixtures + RaidUI-derived oracles.
+                    per-night artifact shape tests (NightArtifactTests, incl. .night.v1),
+                    against Tempo's committed combat-log fixtures + RaidUI-derived oracles.
 src/leopard-web/    UI — Vite + React. The eight tabs above; built to a static bundle for ship.
-                    vitest (57 tests): context.test.js (render===serialize byte-exact, all 3
-                    zoom shapes), lens.test.js (career lens: canonical order, digest, provenance,
-                    confidence, null-skip), knowledge.test.js + contract.test.js (Explorer
-                    registry + slice-contract compiler: golden XML, digest stability, ordering,
-                    all nine live-object serializers + explicit-absence lines).
+                    vitest (73 tests): context.test.js (render===serialize byte-exact),
+                    lens.test.js (career + night lenses: canonical order, digest, provenance,
+                    confidence, absence rules), knowledge.test.js + contract.test.js (Explorer
+                    registry + slice compiler: golden XML for all eleven live objects,
+                    digest stability, explicit-absence lines), provider.test.js (the
+                    dual-protocol parsers — Ollama NDJSON / OpenAI SSE).
                     lens.js — the career lens composer (property palette → versioned XML).
                     knowledge.js / contract.js — the Explorer's object registry + slice
                     compiler (ADR-0007); Explorer*.jsx — the knowledge-IDE surface.
@@ -78,7 +84,7 @@ docs/               product-vision.md, feature-order.md, career-roster.md, pipel
                     (versioned property palette for the query builder — disk-confirmed),
                     query-builder-design-prompt.md, rack-design-prompt.md (authoring surface),
                     live-insight-design-brief.md, signals-artifact-port-brief.md,
-                    adr/ (ADR-0001..0009).
+                    adr/ (ADR-0001..0010).
 ```
 
 ## Dev
@@ -89,13 +95,13 @@ dotnet run --project src/leopard-host
 # headless (serve the API only — no window; for cache backfills, scripting, smoke checks)
 dotnet run --project src/leopard-host -- --headless
 
-# tests (67 — roster/trace + invariant suites + per-night artifact shapes)
+# tests (68 — roster/trace + invariant suites + per-night artifact shapes)
 dotnet test src/leopard-host.Tests
 
 # UI hot-reload (optional; proxies /api + /ollama to the host) — http://localhost:5273
 cd src/leopard-web; npm install; npm run dev
 
-# web unit tests (vitest; 57 tests — CanonicalContext + career lens + Explorer registry/compiler)
+# web unit tests (vitest; 73 tests — contexts, both lenses, Explorer compiler, provider protocols)
 cd src/leopard-web; npm test
 
 # build the shipped UI bundle into the host (vite outputs straight to wwwroot):
@@ -104,5 +110,7 @@ dotnet build src/leopard-host          # REQUIRED: copies wwwroot into bin (the 
                                        # bin copy — skipping this serves stale assets; ADR-0008)
 ```
 
-**Requires:** .NET 9 SDK · Node 20+ · local Ollama with a model pulled
-(`ollama pull qwen2.5:14b-instruct`) · the Tempo repo at `../../World of Warcraft/tempo`.
+**Requires:** .NET 9 SDK · Node 20+ · a local model provider — Ollama with a model pulled
+(`ollama pull qwen2.5:14b-instruct`), or any OpenAI-shaped server via config
+(`askProviderUrl`/`askProviderApi` in `%LOCALAPPDATA%\Leopard\config.json`) ·
+the Tempo repo at `../../World of Warcraft/tempo`.
