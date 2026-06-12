@@ -1,4 +1,5 @@
 using System.Text;
+using System.Text.Json;
 using Tempo.Core.Ingest;
 
 namespace Leopard.Host;
@@ -69,6 +70,69 @@ public static class BoxScore
 
         sb.AppendLine("_(Box score computed by Leopard from Tempo's parser. Every figure above is exact - reflect on these facts, do not infer beyond them.)_");
         return sb.ToString();
+    }
+
+    /// <summary>
+    /// The structured emit alongside the markdown blob — the same figures, field-addressable,
+    /// so the night lens can compose them property-by-property (the gate that kept the lens
+    /// composer career-only; see docs/property-inventory.md "Box Score artifact"). Cached as
+    /// <c>.night.v1.json</c>. `Build` above stays byte-identical and untouched; the few small
+    /// per-encounter expressions (execute/fast/longest) are deliberately mirrored here rather
+    /// than refactored out from under the shipping markdown path.
+    /// </summary>
+    public static string BuildJson(ParseResult parse, JsonSerializerOptions json)
+    {
+        var encounters = parse.Sessions.SelectMany(s => s.Encounters).ToList();
+        var session = parse.Sessions.FirstOrDefault();
+        var killed = encounters.Where(e => e.Pulls.Any(p => p.Outcome == "Kill")).ToList();
+        var inProgress = encounters.Where(e => e.Pulls.Count > 0 && e.Pulls.All(p => p.Outcome != "Kill")).ToList();
+
+        object EncounterCard(ContractEncounter e, bool wasKilled)
+        {
+            var deaths = e.Pulls.Select(p => p.Deaths).ToList();
+            var executed = e.Pulls.Where(p => p.BossEndPctHp == 0).Select(p => p.Num).ToList();
+            var withHp = e.Pulls.Where(p => p.BossEndPctHp >= 0 && p.BossEndPctHp <= 100).ToList();
+            var killPull = wasKilled ? e.Pulls.First(p => p.Outcome == "Kill") : null;
+            return new
+            {
+                name = e.Name ?? "Unknown",
+                difficulty = e.Difficulty,
+                killed = wasKilled,
+                pullCount = e.Pulls.Count,
+                killDurationMs = killPull?.DurationMs,
+                killDeaths = killPull?.Deaths,
+                deathsPerPull = deaths,
+                deathTrend = wasKilled ? null : Trend(deaths),
+                executePulls = executed,
+                bestProgressPct = executed.Count > 0 ? 0.0
+                    : withHp.Count > 0 ? withHp.Min(p => p.BossEndPctHp!.Value) : (double?)null,
+                fastWipePulls = e.Pulls.Where(p => p.DurationMs > 0 && p.DurationMs <= 30000)
+                    .Select(p => p.Num).ToList(),
+                longestPulls = e.Pulls.OrderByDescending(p => p.DurationMs).Take(3)
+                    .Select(p => new { n = p.Num, durationMs = p.DurationMs }).ToList(),
+                pulls = e.Pulls.Select(p => new
+                {
+                    n = p.Num,
+                    outcome = p.Outcome.ToLowerInvariant(),
+                    deaths = p.Deaths,
+                    durationMs = p.DurationMs,
+                    bossEndPctHp = p.BossEndPctHp,
+                }).ToList(),
+            };
+        }
+
+        var night = new
+        {
+            zone = string.IsNullOrWhiteSpace(session?.Zone) ? "This raid night" : session!.Zone!,
+            date = (session?.StartedAt ?? "").Length >= 10 ? session!.StartedAt!.Substring(0, 10) : "",
+            difficulty = killed.FirstOrDefault()?.Difficulty ?? inProgress.FirstOrDefault()?.Difficulty ?? "",
+            playerCount = session?.Participants.Count ?? 0,
+            bossesKilled = killed.Count,
+            bossesInProgress = inProgress.Count,
+            encounters = killed.Select(e => EncounterCard(e, true))
+                .Concat(inProgress.Select(e => EncounterCard(e, false))).ToList(),
+        };
+        return JsonSerializer.Serialize(night, json);
     }
 
     static string Dur(long ms)

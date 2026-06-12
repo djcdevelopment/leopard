@@ -31,6 +31,15 @@ export async function getBoxscore(name) {
   return r.text()
 }
 
+// Night — the box score's figures as structured JSON (the night-lens substrate). 404 =>
+// parsed before the night artifact existed — Ask falls back to the markdown box score.
+export async function getNight(name) {
+  const r = await fetch(`${A}/night?name=${encodeURIComponent(name)}`)
+  if (r.status === 404) return null
+  if (!r.ok) throw new Error(`night HTTP ${r.status}`)
+  return r.json()
+}
+
 // Per-encounter Trends artifact (rule-row windows + coherence series) for a parsed night.
 // 404 means the night was parsed before Trends existed — re-parse it in Setup.
 export async function getTrends(name) {

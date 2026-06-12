@@ -57,7 +57,16 @@ Produced at parse time. Format: markdown blob. Not field-addressable until a str
 
 \* `bestProgressPct` is a `min()` over exact figures — exact arithmetic, `confidence=1.0`.
 
-> **Structured emit deferred.** Box score fields above are today embedded in a pre-rendered markdown blob (`BoxScore.Build()` returns `StringBuilder.ToString()`). Field-level selection requires a structured emit alongside the markdown blob — C# work depending on the Tempo sibling repo, deferred to a Windows session.
+> **Structured emit SHIPPED (2026-06-11).** `BoxScore.BuildJson` emits the same figures as
+> structured JSON alongside the untouched markdown blob — cached as `.night.v1.json`, served
+> at `GET /api/night`. The night lens (`buildNightLens` in `lens.js`, `NIGHT_PALETTE`)
+> composes these field-by-field; Ask's night zoom is now a property composer, falling back to
+> the markdown blob for pre-artifact parse vintages. One composed ID was added for the
+> markdown's killed-boss line:
+
+| ID | Label | Scope | Type | exact/derived | derivedFrom | confidence | groundable | null-if-no-replay | confirmed |
+|---|---|---|---|---|---|---|---|---|---|
+| `raid.encounter.killSummary@v1` | Kill details (duration + deaths of the kill pull) | encounter | string | derived | `raid.pull.durationMs@v1`, `raid.pull.deaths@v1` | 1.0 | context | no | repo (`BoxScore.cs` BuildJson) |
 
 ---
 
@@ -287,7 +296,7 @@ property IDs never collide.
 
 | Property family | Context-groundable | Viz-only |
 |---|---|---|
-| Box score fields | ✓ (blob today; field-level after C# structured emit) | — |
+| Box score fields | ✓ field-level (`.night.v1.json` + the night lens) | — |
 | Career summary fields | ✓ (blob today) | — |
 | Career-input pull/encounter fields | ✓ | — |
 | Roster row fields | ✓ | — |

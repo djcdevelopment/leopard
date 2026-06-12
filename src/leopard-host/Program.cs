@@ -110,6 +110,12 @@ string ClassifyCachePath(string name, DateTime mtimeUtc)
     // v1: per-pull wipe classification (the rule-tree verdicts). See ClassifyArtifact.
     return Path.Combine(cacheDir, $"{safe}__{mtimeUtc.Ticks}.classify.v1.json");
 }
+string NightCachePath(string name, DateTime mtimeUtc)
+{
+    var safe = string.Join("_", name.Split(Path.GetInvalidFileNameChars()));
+    // v1: the box score's figures as structured JSON (the night-lens substrate). See BoxScore.BuildJson.
+    return Path.Combine(cacheDir, $"{safe}__{mtimeUtc.Ticks}.night.v1.json");
+}
 
 // Every parsed night's career-input encounters, fanned in (same loop the Roster/wkdelta/career-
 // summary endpoints run inline; the live loop needs it as a callable).
@@ -213,9 +219,10 @@ app.MapPost("/api/parse", async (HttpRequest req) =>
             var coverageCache = CoverageCachePath(name, mtime);
             var segmentsCache = SegmentsCachePath(name, mtime);
             var classifyCache = ClassifyCachePath(name, mtime);
+            var nightCache = NightCachePath(name, mtime);
             // One parse feeds every artifact. Re-derive if ANY is missing, so a night parsed
             // before a surface existed regenerates that surface's artifact on next parse.
-            if (!File.Exists(cache) || !File.Exists(trendsCache) || !File.Exists(traceCache) || !File.Exists(careerCache) || !File.Exists(shapeCache) || !File.Exists(signalsCache) || !File.Exists(affinityCache) || !File.Exists(playersCache) || !File.Exists(coverageCache) || !File.Exists(segmentsCache) || !File.Exists(classifyCache))
+            if (!File.Exists(cache) || !File.Exists(trendsCache) || !File.Exists(traceCache) || !File.Exists(careerCache) || !File.Exists(shapeCache) || !File.Exists(signalsCache) || !File.Exists(affinityCache) || !File.Exists(playersCache) || !File.Exists(coverageCache) || !File.Exists(segmentsCache) || !File.Exists(classifyCache) || !File.Exists(nightCache))
             {
                 var parse = ParserPipeline.Parse(path);
                 File.WriteAllText(cache, BoxScore.Build(parse), utf8);
@@ -240,6 +247,8 @@ app.MapPost("/api/parse", async (HttpRequest req) =>
                 File.WriteAllText(segmentsCache, FormationSegments.BuildJson(parse, json), utf8);
                 // Classify: per-pull wipe verdicts (rule tree + coverage quality model).
                 File.WriteAllText(classifyCache, ClassifyArtifact.BuildJson(parse, json), utf8);
+                // Night: the box score's exact figures, structured (the night-lens substrate).
+                File.WriteAllText(nightCache, BoxScore.BuildJson(parse, json), utf8);
             }
             results.Add(new { name, ok = true, parsed = true });
         }
@@ -256,6 +265,20 @@ app.MapGet("/api/boxscore", (string name) =>
     var cache = CachePath(name, File.GetLastWriteTimeUtc(path));
     if (!File.Exists(cache)) return Results.NotFound(new { error = "not parsed yet" });
     return Results.Text(File.ReadAllText(cache), "text/markdown");
+});
+
+// Night — the box score's figures as structured JSON (zone/date/result + per-encounter
+// trend/progress/pull rows). The night-lens substrate: same facts as /api/boxscore, but
+// field-addressable so the lens composer can select properties. 404 => parsed before the
+// night artifact existed (re-parse in Setup; Ask falls back to the markdown blob).
+app.MapGet("/api/night", (string name) =>
+{
+    var cfg = LoadConfig();
+    var path = Path.Combine(cfg.LogDir, name);
+    if (!File.Exists(path)) return Results.NotFound(new { error = "log not found" });
+    var cache = NightCachePath(name, File.GetLastWriteTimeUtc(path));
+    if (!File.Exists(cache)) return Results.NotFound(new { error = "not parsed yet" });
+    return Results.Text(File.ReadAllText(cache), "application/json");
 });
 
 // Trends artifact (per-encounter rule-row windows + coherence series), computed in-process

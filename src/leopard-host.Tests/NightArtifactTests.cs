@@ -5,10 +5,10 @@ using Xunit;
 namespace Leopard.Host.Tests;
 
 /// <summary>
-/// Shape tests for the three phase-2 per-night artifacts (.coverage.v1 / .segments.v1 /
-/// .classify.v1) against the real fixture night — the modules' math is unit-tested in their
-/// own suites; what these pin is the cached JSON contract the Explorer fetches. One parse,
-/// three walks (the fixture is the same 8-wipe Belo'ren session ShapeArtifactTests uses).
+/// Shape tests for the per-night artifact caches (.coverage.v1 / .segments.v1 / .classify.v1 /
+/// .night.v1) against the real fixture night — the modules' math is unit-tested in their
+/// own suites; what these pin is the cached JSON contract the UI fetches. One parse,
+/// four walks (the fixture is the same 8-wipe Belo'ren session ShapeArtifactTests uses).
 /// </summary>
 public class NightArtifactTests
 {
@@ -85,6 +85,49 @@ public class NightArtifactTests
             }
         }
         Assert.True(sawSegments, "fixture night produced no formation segments at all");
+    }
+
+    [Fact]
+    public void Night_artifact_structuredBoxScore_matchesTheMarkdownFigures()
+    {
+        var root = JsonDocument.Parse(BoxScore.BuildJson(Parse.Value, Json())).RootElement;
+
+        foreach (var prop in new[] { "zone", "date", "difficulty", "playerCount", "bossesKilled", "bossesInProgress", "encounters" })
+            Assert.True(root.TryGetProperty(prop, out _), $"night missing {prop}");
+
+        var encs = root.GetProperty("encounters");
+        Assert.Equal(root.GetProperty("bossesKilled").GetInt32() + root.GetProperty("bossesInProgress").GetInt32(),
+            encs.GetArrayLength());
+
+        foreach (var e in encs.EnumerateArray())
+        {
+            foreach (var prop in new[] { "name", "difficulty", "killed", "pullCount", "deathsPerPull", "bestProgressPct", "fastWipePulls", "longestPulls", "pulls" })
+                Assert.True(e.TryGetProperty(prop, out _), $"encounter missing {prop}");
+
+            var killed = e.GetProperty("killed").GetBoolean();
+            Assert.Equal(e.GetProperty("pullCount").GetInt32(), e.GetProperty("pulls").GetArrayLength());
+            Assert.Equal(e.GetProperty("pullCount").GetInt32(), e.GetProperty("deathsPerPull").GetArrayLength());
+            if (killed)
+            {
+                // A killed boss carries the kill summary and no trend.
+                Assert.NotEqual(JsonValueKind.Null, e.GetProperty("killDurationMs").ValueKind);
+                Assert.Equal(JsonValueKind.Null, e.GetProperty("deathTrend").ValueKind);
+            }
+            else
+            {
+                Assert.Equal(JsonValueKind.String, e.GetProperty("deathTrend").ValueKind);
+            }
+            foreach (var p in e.GetProperty("pulls").EnumerateArray())
+            {
+                Assert.Contains(p.GetProperty("outcome").GetString(), new[] { "kill", "wipe" });
+                Assert.True(p.GetProperty("n").GetInt32() >= 1);
+            }
+        }
+
+        // The fixture is the 8-wipe Belo'ren session: one in-progress boss with a real trend.
+        var belo = encs.EnumerateArray().First(e => !e.GetProperty("killed").GetBoolean());
+        Assert.True(belo.GetProperty("pullCount").GetInt32() >= 4);
+        Assert.Contains("deaths", belo.GetProperty("deathTrend").GetString());
     }
 
     [Fact]

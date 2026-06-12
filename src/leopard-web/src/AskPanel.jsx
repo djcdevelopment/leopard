@@ -1,10 +1,10 @@
 import React, { useEffect, useRef, useState } from 'react'
 import { chatStream } from './provider.js'
-import { getBoxscore, getCareer, getTrends } from './api.js'
+import { getBoxscore, getCareer, getNight, getTrends } from './api.js'
 import { SEEDED_QUESTIONS } from './evidence.js'
 import { buildMessages } from './prompt.js'
 import { ContextBuilder } from './context.js'
-import { CAREER_PALETTE, CAREER_DEFAULT_IDS, buildCareerLens } from './lens.js'
+import { CAREER_PALETTE, CAREER_DEFAULT_IDS, buildCareerLens, NIGHT_PALETTE, NIGHT_DEFAULT_IDS, buildNightLens } from './lens.js'
 
 // The reusable Ask experience, grounded at a chosen ZOOM. Rendered on the Leopard tab (allowZoom,
 // the full front door) and embedded at the Pipeline's terminus (allowZoom=false, night only). The
@@ -18,8 +18,11 @@ export default function AskPanel({ provider, model, night, hasParsed, allowZoom 
   const [trendEncs, setTrendEncs] = useState([]) // this night's boss encounters (trend zoom)
   const [trendId, setTrendId] = useState('')
   const [context, setContext] = useState(null) // CanonicalContext | null
-  // career lens — which properties the user has selected, and their rendered display lines
+  // lens composers — which properties the user has selected, and their rendered display lines
   const [selectedCareerProps, setSelectedCareerProps] = useState(CAREER_DEFAULT_IDS)
+  const [selectedNightProps, setSelectedNightProps] = useState(NIGHT_DEFAULT_IDS)
+  // night artifact: undefined = loading, null = pre-artifact parse (markdown fallback), object = lens substrate
+  const [nightData, setNightData] = useState(undefined)
   const [displayItems, setDisplayItems] = useState([]) // [{id, label, valueLabel}]
   const [question, setQuestion] = useState('')
   const [answer, setAnswer] = useState('')
@@ -50,6 +53,18 @@ export default function AskPanel({ provider, model, night, hasParsed, allowZoom 
       .catch(() => {})
   }, [zoom]) // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Fetch the structured night artifact once per night. null (404) = parsed before the
+  // artifact existed — the night zoom falls back to the markdown box-score blob.
+  useEffect(() => {
+    if (!night) { setNightData(undefined); return }
+    let alive = true
+    setNightData(undefined)
+    getNight(night)
+      .then((n) => { if (alive) setNightData(n) })
+      .catch(() => { if (alive) setNightData(null) })
+    return () => { alive = false }
+  }, [night])
+
   // Load this night's trends artifact when the trend zoom is opened or the night changes.
   useEffect(() => {
     if (zoom !== 'trend' || !night) return
@@ -72,7 +87,16 @@ export default function AskPanel({ provider, model, night, hasParsed, allowZoom 
     let alive = true
 
     if (zoom === 'night') {
-      if (!night) return
+      if (!night || nightData === undefined) return
+      if (nightData) {
+        // Composer path: the structured artifact is in state — build synchronously, like career.
+        const { xml, displayItems: items, propertyCount } = buildNightLens(nightData, selectedNightProps)
+        const label = `${nightData.zone}${nightData.difficulty ? ` (${nightData.difficulty})` : ''} — this raid night`
+        setContext(new ContextBuilder().setText(xml, label, propertyCount).freeze())
+        setDisplayItems(items)
+        return
+      }
+      // Pre-artifact parse: fall back to the markdown blob (re-parse in Setup to compose).
       getBoxscore(night)
         .then((b) => { if (alive) setContext(new ContextBuilder().setText(b, 'this raid night').freeze()) })
         .catch(() => {})
@@ -96,7 +120,7 @@ export default function AskPanel({ provider, model, night, hasParsed, allowZoom 
       setContext(new ContextBuilder().setTrend(enc).freeze())
       return
     }
-  }, [zoom, night, careerId, careers, selectedCareerProps, trendId, trendEncs])
+  }, [zoom, night, nightData, selectedNightProps, careerId, careers, selectedCareerProps, trendId, trendEncs])
 
   const canAsk = provider.status === 'ready' && !!context && !busy
   async function ask(q) {
@@ -122,20 +146,22 @@ export default function AskPanel({ provider, model, night, hasParsed, allowZoom 
     }
   }
 
-  function toggleCareerProp(id, checked) {
-    setSelectedCareerProps(prev => {
+  function toggleProp(setSelected) {
+    return (id, checked) => setSelected(prev => {
       const next = new Set(prev)
       if (checked) next.add(id)
       else next.delete(id)
       return next
     })
   }
+  const toggleCareerProp = toggleProp(setSelectedCareerProps)
+  const toggleNightProp = toggleProp(setSelectedNightProps)
 
   if (!hasParsed) {
     return <p className="muted">No parsed raids yet — go to <b>Setup / Configuration</b>, pick a night, and click <b>PARSE</b>.</p>
   }
 
-  const isCareerComposer = zoom === 'career' && displayItems.length > 0
+  const isComposer = (zoom === 'career' || zoom === 'night') && displayItems.length > 0
 
   return (
     <>
@@ -158,7 +184,7 @@ export default function AskPanel({ provider, model, night, hasParsed, allowZoom 
         </div>
       )}
 
-      {/* Career property palette — "Tell Leopard what matters" */}
+      {/* Property palettes — "Tell Leopard what matters" */}
       {allowZoom && zoom === 'career' && careers.length > 0 && (
         <div className="career-palette">
           <span className="muted small">Tell Leopard what matters:</span>
@@ -176,16 +202,33 @@ export default function AskPanel({ provider, model, night, hasParsed, allowZoom 
           </div>
         </div>
       )}
+      {allowZoom && zoom === 'night' && nightData && (
+        <div className="career-palette">
+          <span className="muted small">Tell Leopard what matters:</span>
+          <div className="career-props">
+            {NIGHT_PALETTE.map(prop => (
+              <label key={prop.id} className="prop-toggle">
+                <input
+                  type="checkbox"
+                  checked={selectedNightProps.has(prop.id)}
+                  onChange={e => toggleNightProp(prop.id, e.target.checked)}
+                />
+                {prop.label}
+              </label>
+            ))}
+          </div>
+        </div>
+      )}
 
       {context && (
         <>
           <details className="evidence-panel" open>
             <summary>
-              {isCareerComposer ? 'What Leopard knows' : 'What Leopard reads'}
+              {isComposer ? 'What Leopard knows' : 'What Leopard reads'}
               <span className="muted"> — {context.scopeLabel}</span>
             </summary>
 
-            {isCareerComposer ? (
+            {isComposer ? (
               <>
                 <ul className="lens-summary">
                   {displayItems.map(({ id, label, valueLabel }) => (
