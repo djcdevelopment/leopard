@@ -30,8 +30,14 @@ export default defineConfig({
         target: 'http://localhost:5280',
         changeOrigin: true,
       },
-      // The default inference provider (Ollama). Proxied so the browser makes no
-      // cross-origin call — no Ollama CORS config needed.
+      // The provider route — goes to the HOST (not straight to Ollama) so the configured
+      // provider (config.json askProviderUrl/askProviderApi) applies in dev exactly like
+      // prod. The host's /llm forwards to the configured URL, default Ollama.
+      '/llm': {
+        target: 'http://localhost:5280',
+        changeOrigin: true,
+      },
+      // Legacy direct-Ollama route; the provider layer now uses /llm.
       '/ollama': {
         target: 'http://localhost:11434',
         changeOrigin: true,

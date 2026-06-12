@@ -27,3 +27,30 @@ is invisible to every surface, on purpose.
 Leopard's Ask backend is `provider.chat(messages, { stream })` against the selected provider. Default =
 Ollama. Swapping providers is a config choice — invisible to Replay, Shape, Trends, Ask, Share. Specialized
 runtimes (the Tempo advanced path) are just another entry in the provider list.
+
+## How it's wired (2026-06-11)
+
+The contract above is implemented as one provider entry in `config.json`
+(`%LOCALAPPDATA%\Leopard\config.json`):
+
+```json
+{ "askProviderUrl": "http://127.0.0.1:8090", "askProviderApi": "openai" }
+```
+
+- **Null/absent = the default**: Ollama on `http://127.0.0.1:11434`, `api: "ollama"`. Existing
+  installs change nothing.
+- The host exposes **`/llm/*`** — a streaming reverse proxy to the configured URL. The UI's
+  provider layer (`src/leopard-web/src/provider.js`) reads `askProviderApi` from `/api/config`
+  and speaks the matching protocol through `/llm`: `ollama` = `/api/tags` + `/api/chat`
+  (NDJSON); `openai` = `/v1/models` + `/v1/chat/completions` (SSE). The protocol parsers are
+  pure and vitest-covered.
+- **Dev goes through the host too** (Vite proxies `/llm` → :5280), so the configured provider
+  applies identically in dev and packaged builds. The old direct `/ollama` routes remain as
+  legacy aliases.
+- The dual-B70 path is now a config edit: point `askProviderUrl` at the vllama facade (:8090)
+  or llama-server (:8080) with `askProviderApi: "openai"`. No UI for this yet — config-file
+  only, same as `liveInferenceUrl`.
+- Saving a folder in Setup (`PUT /api/config` with `logDir` only) **preserves** hand-edited
+  optional fields — the handler merges absent/null fields from disk (this also covers
+  `liveInferenceUrl`/`liveModel`, which previously got cleared by a Setup save). To clear a
+  provider entry, edit `config.json` and remove the field.

@@ -143,9 +143,20 @@ app.MapPut("/api/config", async (HttpRequest req) =>
 {
     var c = await JsonSerializer.DeserializeAsync<LeopardConfig>(req.Body, json);
     if (c is null || string.IsNullOrWhiteSpace(c.LogDir)) return Results.BadRequest(new { error = "logDir required" });
-    SaveConfig(c);
+    // Merge-on-null: the Setup tab PUTs { logDir } alone, and the optional fields
+    // (live/provider entries) are only ever SET by hand-editing config.json — so an absent
+    // field here means "keep what's on disk", never "clear it". Clearing = edit the file.
+    var cur = LoadConfig();
+    var merged = c with
+    {
+        LiveInferenceUrl = c.LiveInferenceUrl ?? cur.LiveInferenceUrl,
+        LiveModel = c.LiveModel ?? cur.LiveModel,
+        AskProviderUrl = c.AskProviderUrl ?? cur.AskProviderUrl,
+        AskProviderApi = c.AskProviderApi ?? cur.AskProviderApi,
+    };
+    SaveConfig(merged);
     live.Restart(); // re-pick the newest log under the (possibly new) dir
-    return Results.Json(c, json);
+    return Results.Json(merged, json);
 });
 
 // ── Live (between-pull insight) ── see docs/live-insight-design-brief.md ──
@@ -508,15 +519,12 @@ app.MapPost("/api/pick-folder", () =>
     return Results.Json(new { available = true, logDir = picked });
 });
 
-// Proxy /ollama/* -> the local Ollama provider so the shipped UI (served from THIS
-// host) reaches Ollama same-origin — mirrors the Vite dev proxy. Streams responses.
-var ollama = new HttpClient { Timeout = Timeout.InfiniteTimeSpan };
-app.Map("/ollama/{**path}", async (HttpContext ctx, string path) =>
+// Streaming reverse proxy used by both provider routes below. Forwards method, query,
+// and body; streams the response (NDJSON or SSE) straight through.
+var llm = new HttpClient { Timeout = Timeout.InfiniteTimeSpan };
+async Task ProxyLlm(HttpContext ctx, string baseUrl, string path)
 {
-    // 127.0.0.1, not "localhost": Ollama binds 127.0.0.1 only, and .NET's HttpClient resolves
-    // "localhost" to ::1 (IPv6) first on Windows — that attempt stalls ~2s and fails before any
-    // IPv4 fallback, which left the UI stuck on "Looking for a local model…".
-    var target = $"http://127.0.0.1:11434/{path}{ctx.Request.QueryString}";
+    var target = $"{baseUrl.TrimEnd('/')}/{path}{ctx.Request.QueryString}";
     using var msg = new HttpRequestMessage(new HttpMethod(ctx.Request.Method), target);
     if (HttpMethods.IsPost(ctx.Request.Method) || HttpMethods.IsPut(ctx.Request.Method))
     {
@@ -526,13 +534,31 @@ app.Map("/ollama/{**path}", async (HttpContext ctx, string path) =>
     }
     try
     {
-        using var resp = await ollama.SendAsync(msg, HttpCompletionOption.ResponseHeadersRead, ctx.RequestAborted);
+        using var resp = await llm.SendAsync(msg, HttpCompletionOption.ResponseHeadersRead, ctx.RequestAborted);
         ctx.Response.StatusCode = (int)resp.StatusCode;
         ctx.Response.ContentType = resp.Content.Headers.ContentType?.ToString() ?? "application/json";
         await resp.Content.CopyToAsync(ctx.Response.Body, ctx.RequestAborted);
     }
-    catch (Exception ex) { ctx.Response.StatusCode = 502; await ctx.Response.WriteAsync($"ollama proxy error: {ex.Message}"); }
-});
+    catch (Exception ex) { ctx.Response.StatusCode = 502; await ctx.Response.WriteAsync($"llm proxy error: {ex.Message}"); }
+}
+
+// The Ask/Explorer provider route (docs/provider-contract.md): /llm/* forwards to the
+// CONFIGURED provider — AskProviderUrl in config.json, default Ollama. The UI reads
+// AskProviderApi ("ollama" | "openai") from /api/config to pick the protocol it speaks
+// through this route. Dev and prod both go through here (Vite proxies /llm to this host),
+// so the config applies in every mode.
+//
+// 127.0.0.1, not "localhost", in the default: Ollama binds 127.0.0.1 only, and .NET's
+// HttpClient resolves "localhost" to ::1 (IPv6) first on Windows — that attempt stalls ~2s
+// and fails before any IPv4 fallback, which left the UI stuck on "Looking for a local model…".
+const string DefaultProviderUrl = "http://127.0.0.1:11434";
+app.Map("/llm/{**path}", (HttpContext ctx, string path) =>
+    ProxyLlm(ctx, LoadConfig().AskProviderUrl ?? DefaultProviderUrl, path));
+
+// Legacy fixed-target Ollama proxy — kept so anything still calling /ollama/* keeps working;
+// the provider layer now uses /llm/*.
+app.Map("/ollama/{**path}", (HttpContext ctx, string path) =>
+    ProxyLlm(ctx, DefaultProviderUrl, path));
 
 // Ship: serve the built leopard-web bundle (dev serves the UI via Vite instead).
 app.UseDefaultFiles();
@@ -607,6 +633,10 @@ public class MainForm : System.Windows.Forms.Form
 
 // LiveInferenceUrl/LiveModel: the between-pull insight endpoint (OpenAI chat-completions shape).
 // Defaults live in LiveSession (llama-server on the 2nd B70, :8080) — null here means "default".
-public record LeopardConfig(string LogDir, string? LiveInferenceUrl = null, string? LiveModel = null);
+// AskProviderUrl/AskProviderApi: the Ask/Explorer provider entry per docs/provider-contract.md —
+// a base URL plus the API it speaks ("ollama" | "openai"). Null/null = local Ollama on 11434.
+// E.g. the dual-B70 path: AskProviderUrl http://127.0.0.1:8090, AskProviderApi "openai" (vllama).
+public record LeopardConfig(string LogDir, string? LiveInferenceUrl = null, string? LiveModel = null,
+    string? AskProviderUrl = null, string? AskProviderApi = null);
 record ParseRequest(List<string> Names);
 record FeedbackRequest(string InsightId, bool? Useful, bool? Grounded, string? Comment);
