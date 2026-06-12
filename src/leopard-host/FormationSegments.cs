@@ -1,4 +1,6 @@
+using System.Text.Json;
 using Tempo.Core.Ingest;
+using Tempo.Host.ViewerApi.Projections;
 
 namespace Leopard.Host;
 
@@ -116,5 +118,45 @@ public static class FormationSegments
         if (result.Segments.Count == 0) return null;
         return string.Join(", ", result.Segments.Select(s =>
             $"{s.Formation} {s.StartMs / 1000}-{s.EndMs / 1000}s ({s.MedianPairwiseDistanceYd:0}yd)"));
+    }
+
+    /// <summary>Per-night artifact: one card per boss, the detected movement phases per pull
+    /// with replay frames (segments + the one-line phase story). Sibling to
+    /// <see cref="SignalsArtifact.BuildJson"/>; cached as <c>.segments.v1.json</c>.</summary>
+    public static string BuildJson(ParseResult parse, JsonSerializerOptions json)
+    {
+        var encounters = EncountersProjection.ToEncounters(parse.Sessions);
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        var cards = new List<object>();
+
+        foreach (var enc in encounters)
+        {
+            if (!seen.Add(enc.Id)) continue;
+            var pulls = new List<object>();
+            foreach (var p in enc.Pulls)
+            {
+                IReadOnlyList<FormationSegment>? segments = null;
+                string? phases = null;
+                if (parse.ReplaysByPullId.TryGetValue(p.Id, out var replay) && replay.Frames.Count > 1)
+                {
+                    try
+                    {
+                        var result = Detect(replay);
+                        segments = result.Segments;
+                        phases = Describe(result);
+                    }
+                    catch { /* a malformed replay must not sink the night */ }
+                }
+                pulls.Add(new { pullId = p.Id, n = p.N, outcome = p.Outcome, segments, phases });
+            }
+            cards.Add(new
+            {
+                encounterId = enc.Id,
+                encounterName = enc.Name,
+                difficulty = enc.Difficulty,
+                pulls,
+            });
+        }
+        return JsonSerializer.Serialize(new { encounters = cards }, json);
     }
 }

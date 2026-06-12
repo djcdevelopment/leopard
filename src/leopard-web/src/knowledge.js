@@ -18,7 +18,10 @@ export const EXPLORER_SEEDS = [
   'How far are we getting?',
 ]
 
-// api: which api.js fetcher feeds this object ('signals'|'players'|'affinity'|'diff'|null).
+// api: which api.js fetcher feeds this object ('signals'|'players'|'affinity'|'diff'|
+// 'coverage'|'segments'|'classify'|'shape'|null). 'meters' is the one pseudo-key: it has no
+// fetcher of its own — the meters ride inside the affinity payload, so availability mirrors
+// affinity and the serializer reads nightData.affinity.meters.
 // stage/truth/stream/confidence/promptFit/vizFit: the Properties-panel metadata rows.
 // sliceOptions: the dropdown values the Properties panel offers; sliceDefaults: initial pick.
 // Options marked real in contract.js actually reshape the payload; the rest are recorded
@@ -33,11 +36,18 @@ export const KNOWLEDGE_OBJECTS = [
     description: 'Significant combat moments (death / phase / save / feast / swap) detected over the widened categorical stream. Lights up when Tempo moments reach a host endpoint.',
   },
   {
-    id: 'classify.wipe@v1', label: 'Wipe cause', category: 'MOMENTS', status: 'ghost', api: null,
+    id: 'classify.wipe@v1', label: 'Wipe cause', category: 'MOMENTS', status: 'live', api: 'classify',
     stage: 'Derived · 06', truth: 'DERIVED', confidence: 'med', stream: 'trim',
     promptFit: 'high', vizFit: 'med',
-    builtFrom: ['Replay'], feeds: ['Evidence item'],
-    description: 'Death-event classification: Systemic / Subgroup / Individual / Mixed with a confidence badge. WipeClassifier is ported and tested; needs /api/classify (phase 2).',
+    sliceOptions: {
+      scope: ['raid'],
+      rep: ['verdict + evidence', 'verdict'],   // verdict = drop the evidence lines (real)
+      agg: ['none'],
+      time: ['whole pull'],
+    },
+    sliceDefaults: { scope: 'raid', rep: 'verdict + evidence', agg: 'none', time: 'whole pull' },
+    builtFrom: ['Replay', 'Pulse (six signals)', 'Coverage timeline'], feeds: ['Evidence item'],
+    description: 'The deterministic wipe verdict: systemic / subgroup / individual / called-wipe with confidence, onset, implicated players, and coverage-pattern attribution. Pure rules, no probabilities — including the "called wipe, don\'t coach it" gate.',
   },
 
   // ── EVENTS ───────────────────────────────────────────────────────────────
@@ -103,11 +113,18 @@ export const KNOWLEDGE_OBJECTS = [
     description: 'Per-player role-weighted 0–100 scores (movement / damage / survival / awareness) composed into a composite with a behavioral archetype. Ranks within a pull; damage is a lower bound (retained top-decile events).',
   },
   {
-    id: 'shape.density@v1', label: 'Shape', category: 'MOVEMENT', status: 'ghost', api: null,
+    id: 'shape.density@v1', label: 'Shape', category: 'MOVEMENT', status: 'live', api: 'shape',
     stage: 'Replay · 04', truth: 'DERIVED', confidence: 'high', stream: 'trim',
     promptFit: 'low', vizFit: 'high',
+    sliceOptions: {
+      scope: ['raid'],
+      rep: ['hotspots'],                        // the grid serializes as occupancy stats, not cells
+      agg: ['none'],
+      time: ['whole pull'],
+    },
+    sliceDefaults: { scope: 'raid', rep: 'hotspots', agg: 'none', time: 'whole pull' },
     builtFrom: ['Replay'], feeds: [],
-    description: 'The long-exposure density heatmap of a pull. Already served by /api/shape/density and rendered on the Shape tab — a cheap phase-1.5 flip once a slice serialization makes sense.',
+    description: 'The long-exposure density heatmap of a pull, serialized as occupancy statistics: where the raid actually stood, how concentrated, the hotspot in yards. The same artifact the Shape tab renders.',
   },
   {
     id: 'signals.followership@v1', label: 'Followership', category: 'MOVEMENT', status: 'ghost', api: null,
@@ -117,25 +134,46 @@ export const KNOWLEDGE_OBJECTS = [
     description: 'The followership signal broken out as its own slice (how together the raid moves). Today it rides inside Pulse; a per-signal slice is a phase-2 refinement.',
   },
   {
-    id: 'meters.movement@v1', label: 'Movement meters', category: 'MOVEMENT', status: 'ghost', api: null,
+    id: 'meters.movement@v1', label: 'Movement meters', category: 'MOVEMENT', status: 'live', api: 'meters',
     stage: 'Replay · 04', truth: 'DERIVED', confidence: 'med', stream: 'trim',
     promptFit: 'med', vizFit: 'high',
-    builtFrom: ['Replay'], feeds: [],
-    description: 'Distance / speed / stationary leaderboard plus the wipes-vs-kills movement contrast. Already embedded in the /api/affinity payload (meters, metersByOutcome) — a cheap phase-1.5 flip.',
+    sliceOptions: {
+      scope: ['raid', 'top 5'],                 // top 5 by total distance (real)
+      rep: ['leaderboard'],
+      agg: ['none', 'wipes vs kills'],          // adds the per-player outcome contrast (real)
+      time: ['whole night'],                    // night-scoped — rides the affinity artifact
+    },
+    sliceDefaults: { scope: 'raid', rep: 'leaderboard', agg: 'none', time: 'whole night' },
+    builtFrom: ['Replay'], feeds: ['Evidence item'],
+    description: 'Distance / speed / stationary leaderboard per player across the night, plus the wipes-vs-kills movement contrast (what your kills\' movement had that the wipes didn\'t). Rides the affinity artifact — no extra fetch.',
   },
   {
-    id: 'coverage.timeline@v1', label: 'Coverage timeline', category: 'MOVEMENT', status: 'ghost', api: null,
+    id: 'coverage.timeline@v1', label: 'Coverage timeline', category: 'MOVEMENT', status: 'live', api: 'coverage',
     stage: 'Replay · 04', truth: 'DERIVED', confidence: 'med', stream: 'trim',
     promptFit: 'med', vizFit: 'high',
-    builtFrom: ['Replay'], feeds: [],
-    description: 'Per-frame raid/tank healer-coverage % with snap markers. CoverageTimeline is ported and tested; needs /api/coverage (phase 2).',
+    sliceOptions: {
+      scope: ['raid'],
+      rep: ['timeline', 'summary'],             // timeline = per-second quality/raid% series (real)
+      agg: ['none'],
+      time: ['whole pull'],
+    },
+    sliceDefaults: { scope: 'raid', rep: 'timeline', agg: 'none', time: 'whole pull' },
+    builtFrom: ['Replay'], feeds: ['Wipe cause', 'Evidence item'],
+    description: 'Per-second healing-coverage quality: raid/tank/flex coverage %, the composite quality score, snap markers (sudden collapses, with damage-followed correlation), and fragile-coverage time. The model the wipe classifier\'s coverage attribution reads.',
   },
   {
-    id: 'segments.formation@v1', label: 'Formation segments', category: 'MOVEMENT', status: 'ghost', api: null,
+    id: 'segments.formation@v1', label: 'Formation segments', category: 'MOVEMENT', status: 'live', api: 'segments',
     stage: 'Replay · 04', truth: 'DERIVED', confidence: 'med', stream: 'trim',
     promptFit: 'med', vizFit: 'high',
-    builtFrom: ['Replay'], feeds: [],
-    description: 'Formation-stable periods within a pull (stacked / split / dispersed strip). FormationSegments is ported and tested; needs /api/segments (phase 2).',
+    sliceOptions: {
+      scope: ['raid'],
+      rep: ['phases'],
+      agg: ['none'],
+      time: ['whole pull'],
+    },
+    sliceDefaults: { scope: 'raid', rep: 'phases', agg: 'none', time: 'whole pull' },
+    builtFrom: ['Replay'], feeds: ['Evidence item'],
+    description: 'The pull\'s movement phases from positions alone: stacked / split / dispersed periods with change-points ("stacked for 40s, then split"). Median pairwise distance per segment, in yards.',
   },
 
   // ── MECHANICS ────────────────────────────────────────────────────────────

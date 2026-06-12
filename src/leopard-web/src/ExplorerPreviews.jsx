@@ -89,6 +89,111 @@ export function AffinityPreview({ affinity }) {
   )
 }
 
+export function CoveragePreview({ coverage }) {
+  const quality = coverage?.seconds?.quality || []
+  if (quality.length === 0) return <p className="muted small">No coverage quality model for this pull.</p>
+  const s = coverage.summary
+  const snaps = s?.snappingPoints || []
+  const w = 168
+  const h = 40
+  const dx = quality.length > 1 ? w / (quality.length - 1) : 0
+  return (
+    <div className="ex-preview">
+      <svg viewBox={`0 0 ${w} ${h}`} width={w} height={h} className="ex-covchart">
+        {/* quality is 0–100 by construction — fixed scale, not auto-fit */}
+        <path
+          d={quality.map((v, i) => `${i ? 'L' : 'M'}${(i * dx).toFixed(1)},${(h - (v / 100) * (h - 2) - 1).toFixed(1)}`).join('')}
+          fill="none" stroke="var(--accent)" strokeWidth="1.2"
+        />
+        {snaps.map((sn, k) => {
+          const sec = sn.timeMs / 1000
+          const x = quality.length > 1 ? Math.min(w, (sec / (quality.length - 1)) * w) : 0
+          return <text key={k} x={x.toFixed(1)} y={h - 1} fontSize="7" fill="var(--accent)" textAnchor="middle">▼</text>
+        })}
+      </svg>
+      <p className="muted small">
+        quality avg {Math.round(s.avgQualityScore)} / min {Math.round(s.minQualityScore)} · raid avg {Math.round(s.avgRaidPct)}%
+        {snaps.length > 0 ? ` · ${snaps.length} snap${snaps.length === 1 ? '' : 's'}` : ' · no snaps'}
+      </p>
+    </div>
+  )
+}
+
+const FORMATION_OPACITY = { stacked: 0.9, split: 0.5, dispersed: 0.2 }
+
+export function SegmentsPreview({ pull }) {
+  const segs = pull?.segments || []
+  if (segs.length === 0) return <p className="muted small">No formation segments for this pull.</p>
+  const total = segs[segs.length - 1].endMs
+  return (
+    <div className="ex-preview">
+      <svg viewBox="0 0 168 16" width="168" height="16" className="ex-segstrip">
+        {segs.map((s, i) => (
+          <rect key={i} x={(s.startMs / total) * 168} y="2" width={Math.max(1, ((s.endMs - s.startMs) / total) * 168)} height="12"
+            fill="var(--accent)" fillOpacity={FORMATION_OPACITY[s.formation] ?? 0.4}>
+            <title>{`${s.formation} ${Math.round(s.startMs / 1000)}–${Math.round(s.endMs / 1000)}s (${Math.round(s.medianPairwiseDistanceYd)}yd)`}</title>
+          </rect>
+        ))}
+      </svg>
+      <p className="muted small">{pull.phases || segs.map((s) => s.formation).join(' → ')}</p>
+    </div>
+  )
+}
+
+export function ClassifyPreview({ pull }) {
+  if (!pull) return <p className="muted small">No classification for this pull.</p>
+  const cls = pull.classification
+  if (!cls) return <p className="muted small">Not classified — {pull.reason || 'no verdict'}.</p>
+  const label = cls.kind === 'called-wipe' ? `CALLED WIPE · ${cls.calledWipePattern}` : `${cls.kind.toUpperCase()} collapse`
+  return (
+    <div className="ex-preview">
+      <p className="small"><b>{label}</b> <span className="ex-badge trimmed">{cls.confidence}</span></p>
+      {cls.kind !== 'called-wipe' && (
+        <>
+          <p className="muted small">onset ~{Math.round(cls.inflectionMs / 1000)}s{cls.affected?.length > 0 && cls.kind !== 'systemic' ? ` · ${cls.affected.slice(0, 4).join(', ')}` : ''}</p>
+          {(cls.evidence || []).slice(0, 3).map((e) => <p className="muted small" key={e.signalId}>· {e.reason}</p>)}
+          {cls.coveragePattern && <p className="muted small">coverage: {cls.coveragePattern}{cls.offender ? ` (${cls.offender.displayName})` : ''}</p>}
+        </>
+      )}
+    </div>
+  )
+}
+
+export function MetersPreview({ meters }) {
+  if (!meters || meters.length === 0) return <p className="muted small">No movement meters this night.</p>
+  const ranked = [...meters].sort((a, b) => b.totalDistanceYd - a.totalDistanceYd)
+  const max = ranked[0].totalDistanceYd || 1
+  return (
+    <div className="ex-preview">
+      {ranked.slice(0, 8).map((m) => (
+        <div className="ex-meter-row" key={m.participantId}>
+          <span className="ex-meter-name mono">{m.displayName}</span>
+          <span className="ex-meter-bar"><span style={{ width: `${(m.totalDistanceYd / max) * 100}%` }} /></span>
+          <span className="ex-meter-val mono">{Math.round(m.totalDistanceYd)}yd</span>
+        </div>
+      ))}
+      {ranked.length > 8 && <p className="muted small">+{ranked.length - 8} more</p>}
+    </div>
+  )
+}
+
+export function ShapePreview({ density }) {
+  if (!density || !(density.cells || []).length) return <p className="muted small">No density grid for this pull.</p>
+  const { gridW, gridH, cells } = density
+  const cell = Math.max(2, Math.min(8, Math.floor(168 / gridW)))
+  return (
+    <div className="ex-preview">
+      <svg width={gridW * cell} height={gridH * cell} className="ex-heat">
+        {cells.map((v, i) => v > 0 && (
+          <rect key={i} x={(i % gridW) * cell} y={Math.floor(i / gridW) * cell} width={cell} height={cell}
+            fill="var(--accent)" fillOpacity={Math.max(0.06, v)} />
+        ))}
+      </svg>
+      <p className="muted small">{density.totalSamples} samples · arena ~{Math.round(density.arenaW)}×{Math.round(density.arenaH)} yd</p>
+    </div>
+  )
+}
+
 export function DiffPreview({ diff }) {
   if (!diff) return <p className="muted small">Pick a compare pull to see the diff.</p>
   return (

@@ -92,6 +92,24 @@ string PlayersCachePath(string name, DateTime mtimeUtc)
     // v1: per-pull per-player scores + archetypes (the RaidUI player-* suite). See PlayerScores.
     return Path.Combine(cacheDir, $"{safe}__{mtimeUtc.Ticks}.players.v1.json");
 }
+string CoverageCachePath(string name, DateTime mtimeUtc)
+{
+    var safe = string.Join("_", name.Split(Path.GetInvalidFileNameChars()));
+    // v1: per-pull healing-coverage quality (per-second series + summary + snaps). See CoverageTimeline.
+    return Path.Combine(cacheDir, $"{safe}__{mtimeUtc.Ticks}.coverage.v1.json");
+}
+string SegmentsCachePath(string name, DateTime mtimeUtc)
+{
+    var safe = string.Join("_", name.Split(Path.GetInvalidFileNameChars()));
+    // v1: per-pull formation segments (movement phases). See FormationSegments.
+    return Path.Combine(cacheDir, $"{safe}__{mtimeUtc.Ticks}.segments.v1.json");
+}
+string ClassifyCachePath(string name, DateTime mtimeUtc)
+{
+    var safe = string.Join("_", name.Split(Path.GetInvalidFileNameChars()));
+    // v1: per-pull wipe classification (the rule-tree verdicts). See ClassifyArtifact.
+    return Path.Combine(cacheDir, $"{safe}__{mtimeUtc.Ticks}.classify.v1.json");
+}
 
 // Every parsed night's career-input encounters, fanned in (same loop the Roster/wkdelta/career-
 // summary endpoints run inline; the live loop needs it as a callable).
@@ -181,9 +199,12 @@ app.MapPost("/api/parse", async (HttpRequest req) =>
             var signalsCache = SignalsCachePath(name, mtime);
             var affinityCache = AffinityCachePath(name, mtime);
             var playersCache = PlayersCachePath(name, mtime);
+            var coverageCache = CoverageCachePath(name, mtime);
+            var segmentsCache = SegmentsCachePath(name, mtime);
+            var classifyCache = ClassifyCachePath(name, mtime);
             // One parse feeds every artifact. Re-derive if ANY is missing, so a night parsed
             // before a surface existed regenerates that surface's artifact on next parse.
-            if (!File.Exists(cache) || !File.Exists(trendsCache) || !File.Exists(traceCache) || !File.Exists(careerCache) || !File.Exists(shapeCache) || !File.Exists(signalsCache) || !File.Exists(affinityCache) || !File.Exists(playersCache))
+            if (!File.Exists(cache) || !File.Exists(trendsCache) || !File.Exists(traceCache) || !File.Exists(careerCache) || !File.Exists(shapeCache) || !File.Exists(signalsCache) || !File.Exists(affinityCache) || !File.Exists(playersCache) || !File.Exists(coverageCache) || !File.Exists(segmentsCache) || !File.Exists(classifyCache))
             {
                 var parse = ParserPipeline.Parse(path);
                 File.WriteAllText(cache, BoxScore.Build(parse), utf8);
@@ -202,6 +223,12 @@ app.MapPost("/api/parse", async (HttpRequest req) =>
                 File.WriteAllText(affinityCache, MovementAffinity.BuildJson(parse, json), utf8);
                 // Players: per-pull role-weighted scores + archetypes (the player-* suite).
                 File.WriteAllText(playersCache, PlayerScores.BuildJson(parse, json), utf8);
+                // Coverage: per-pull healing-coverage quality (per-second series + snaps).
+                File.WriteAllText(coverageCache, CoverageTimeline.BuildJson(parse, json), utf8);
+                // Segments: per-pull movement phases (stacked / split / dispersed).
+                File.WriteAllText(segmentsCache, FormationSegments.BuildJson(parse, json), utf8);
+                // Classify: per-pull wipe verdicts (rule tree + coverage quality model).
+                File.WriteAllText(classifyCache, ClassifyArtifact.BuildJson(parse, json), utf8);
             }
             results.Add(new { name, ok = true, parsed = true });
         }
@@ -278,6 +305,44 @@ app.MapGet("/api/players", (string name) =>
     var path = Path.Combine(cfg.LogDir, name);
     if (!File.Exists(path)) return Results.NotFound(new { error = "log not found" });
     var cache = PlayersCachePath(name, File.GetLastWriteTimeUtc(path));
+    if (!File.Exists(cache)) return Results.NotFound(new { error = "not parsed yet" });
+    return Results.Text(File.ReadAllText(cache), "application/json");
+});
+
+// Coverage — per-pull healing-coverage quality (per-second raid/tank/flex % + quality score,
+// snap markers, summary). The CoverageTimeline port surfaced. 404 => parsed before Coverage
+// existed (re-parse in Setup).
+app.MapGet("/api/coverage", (string name) =>
+{
+    var cfg = LoadConfig();
+    var path = Path.Combine(cfg.LogDir, name);
+    if (!File.Exists(path)) return Results.NotFound(new { error = "log not found" });
+    var cache = CoverageCachePath(name, File.GetLastWriteTimeUtc(path));
+    if (!File.Exists(cache)) return Results.NotFound(new { error = "not parsed yet" });
+    return Results.Text(File.ReadAllText(cache), "application/json");
+});
+
+// Segments — per-pull formation phases (stacked / split / dispersed change-points). The
+// FormationSegments port surfaced. 404 => parsed before Segments existed (re-parse in Setup).
+app.MapGet("/api/segments", (string name) =>
+{
+    var cfg = LoadConfig();
+    var path = Path.Combine(cfg.LogDir, name);
+    if (!File.Exists(path)) return Results.NotFound(new { error = "log not found" });
+    var cache = SegmentsCachePath(name, File.GetLastWriteTimeUtc(path));
+    if (!File.Exists(cache)) return Results.NotFound(new { error = "not parsed yet" });
+    return Results.Text(File.ReadAllText(cache), "application/json");
+});
+
+// Classify — per-pull wipe verdicts (systemic / subgroup / individual / called-wipe with
+// confidence, evidence, coverage patterns). The WipeClassifier port surfaced. 404 => parsed
+// before Classify existed (re-parse in Setup).
+app.MapGet("/api/classify", (string name) =>
+{
+    var cfg = LoadConfig();
+    var path = Path.Combine(cfg.LogDir, name);
+    if (!File.Exists(path)) return Results.NotFound(new { error = "log not found" });
+    var cache = ClassifyCachePath(name, File.GetLastWriteTimeUtc(path));
     if (!File.Exists(cache)) return Results.NotFound(new { error = "not parsed yet" });
     return Results.Text(File.ReadAllText(cache), "application/json");
 });

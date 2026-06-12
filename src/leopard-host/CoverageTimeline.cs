@@ -1,4 +1,6 @@
+using System.Text.Json;
 using Tempo.Core.Ingest;
+using Tempo.Host.ViewerApi.Projections;
 
 namespace Leopard.Host;
 
@@ -24,6 +26,13 @@ public sealed record CoverageSummaryDto(
 
 public sealed record CoverageSeriesDto(
     IReadOnlyList<CoverageFrameDto> Frames, CoverageSummaryDto Summary);
+
+/// <summary>The per-second downsample of the per-frame series — what the cached artifact
+/// carries. Frames stay in-process (the classifier reads them at parse time); the cache only
+/// needs chart-resolution series, not 200ms frames with per-healer detail.</summary>
+public sealed record CoverageSecondsDto(
+    IReadOnlyList<double> RaidPct, IReadOnlyList<double> TankPct,
+    IReadOnlyList<double> FlexPct, IReadOnlyList<double> Quality);
 
 /// <summary>
 /// The frame-level healing-coverage quality model, ported from RaidUI's
@@ -245,5 +254,78 @@ public static class CoverageTimeline
             f > 0 ? Math.Round(minTank, 2) : 0,
             f > 0 ? (int)Math.Round(minQuality) : 0,
             fragileMs, snaps));
+    }
+
+    /// <summary>Per-second averages of the per-frame series, bucketed by frame TimeMs (the
+    /// SignalsArtifact convention). Each second averages the frames that landed in it.</summary>
+    public static CoverageSecondsDto ToSeconds(CoverageSeriesDto series)
+    {
+        var frames = series.Frames;
+        if (frames.Count == 0)
+            return new CoverageSecondsDto(Array.Empty<double>(), Array.Empty<double>(),
+                Array.Empty<double>(), Array.Empty<double>());
+
+        var totalSec = frames.Max(fr => fr.TimeMs) / 1000 + 1;
+        var raid = new double[totalSec];
+        var tank = new double[totalSec];
+        var flex = new double[totalSec];
+        var quality = new double[totalSec];
+        var counts = new int[totalSec];
+        foreach (var fr in frames)
+        {
+            var sec = Math.Min(totalSec - 1, Math.Max(0, fr.TimeMs / 1000));
+            raid[sec] += fr.Raid.Pct;
+            tank[sec] += fr.Tank.Pct;
+            flex[sec] += fr.Flex.Pct;
+            quality[sec] += fr.Quality.OverallScore;
+            counts[sec]++;
+        }
+        for (var s = 0; s < totalSec; s++)
+        {
+            var c = Math.Max(1, counts[s]);
+            raid[s] = Math.Round(raid[s] / c, 2);
+            tank[s] = Math.Round(tank[s] / c, 2);
+            flex[s] = Math.Round(flex[s] / c, 2);
+            quality[s] = Math.Round(quality[s] / c, 2);
+        }
+        return new CoverageSecondsDto(raid, tank, flex, quality);
+    }
+
+    /// <summary>Per-night artifact: one card per boss, one coverage block per pull with replay
+    /// frames — per-second series + the summary (snaps included), frames dropped. Sibling to
+    /// <see cref="SignalsArtifact.BuildJson"/>; cached as <c>.coverage.v1.json</c>.</summary>
+    public static string BuildJson(ParseResult parse, JsonSerializerOptions json)
+    {
+        var encounters = EncountersProjection.ToEncounters(parse.Sessions);
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        var cards = new List<object>();
+
+        foreach (var enc in encounters)
+        {
+            if (!seen.Add(enc.Id)) continue;
+            var pulls = new List<object>();
+            foreach (var p in enc.Pulls)
+            {
+                object? coverage = null;
+                if (parse.ReplaysByPullId.TryGetValue(p.Id, out var replay) && replay.Frames.Count > 0)
+                {
+                    try
+                    {
+                        var series = Compute(replay);
+                        coverage = new { seconds = ToSeconds(series), summary = series.Summary };
+                    }
+                    catch { /* a malformed replay must not sink the night */ }
+                }
+                pulls.Add(new { pullId = p.Id, n = p.N, outcome = p.Outcome, coverage });
+            }
+            cards.Add(new
+            {
+                encounterId = enc.Id,
+                encounterName = enc.Name,
+                difficulty = enc.Difficulty,
+                pulls,
+            });
+        }
+        return JsonSerializer.Serialize(new { encounters = cards }, json);
     }
 }

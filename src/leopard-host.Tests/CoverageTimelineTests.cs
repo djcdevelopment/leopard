@@ -145,4 +145,41 @@ public class CoverageTimelineTests
 
         Assert.Equal(10 * 200, cov.Summary.TimeInFragileCoverageMs);
     }
+
+    // ── the per-night artifact (phase 2: /api/coverage) ─────────────────────
+
+    private static CoverageFrameDto FrameDto(int idx, int timeMs, double raidPct, int quality)
+        => new(idx, timeMs,
+            new CoverageBucketDto(0, 2, raidPct), new CoverageBucketDto(0, 1, 0),
+            new CoverageBucketDto(0, 2, 0), new CoverageQualityDto(0, 0, quality),
+            Array.Empty<HealerFrameDto>());
+
+    [Fact]
+    public void ToSeconds_AveragesFramesIntoSecondBuckets()
+    {
+        // Sec 0 holds two frames (raid 100 & 50, quality 60 & 40); sec 1 holds one (80, 90).
+        var series = new CoverageSeriesDto(new[]
+        {
+            FrameDto(0, 0, 100, 60),
+            FrameDto(1, 200, 50, 40),
+            FrameDto(2, 1000, 80, 90),
+        }, new CoverageSummaryDto(0, 0, 0, 0, 0, 0, 0, 0, Array.Empty<SnappingPointDto>()));
+
+        var sec = CoverageTimeline.ToSeconds(series);
+        Assert.Equal(2, sec.RaidPct.Count);
+        Assert.Equal(2, sec.Quality.Count);
+        Assert.Equal(75, sec.RaidPct[0], 2);
+        Assert.Equal(50, sec.Quality[0], 2);
+        Assert.Equal(80, sec.RaidPct[1], 2);
+        Assert.Equal(90, sec.Quality[1], 2);
+    }
+
+    [Fact]
+    public void ToSeconds_EmptySeries_EmptyNotThrow()
+    {
+        var sec = CoverageTimeline.ToSeconds(new CoverageSeriesDto(
+            Array.Empty<CoverageFrameDto>(),
+            new CoverageSummaryDto(0, 0, 0, 0, 0, 0, 0, 0, Array.Empty<SnappingPointDto>())));
+        Assert.Empty(sec.RaidPct);
+    }
 }

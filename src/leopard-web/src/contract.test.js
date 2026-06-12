@@ -61,6 +61,90 @@ const NIGHT = {
       gaps: [{ kind: 'isolated-ranged', primary: { id: 'p3', name: 'Cind', role: 'Ranged' }, secondary: null, composite: 0.1, interpretation: 'Cind max pair-composite 0.10 - standing alone too much.' }],
       gapCount: 1, healersWithGaps: [], tanksWellPaired: true,
     },
+    // The embedded meters.js port (the 'meters' pseudo-api reads these).
+    meters: [
+      // 1199.6 yd rounds to a trailing zero — the fmt regression case (must read 1200, not 12).
+      { participantId: 'p2', displayName: 'Bork', role: 'Tank', totalDistanceYd: 1199.6, avgSpeedYdPerSec: 3.1, peakSpeedYdPerSec: 12.4, stationaryRatio: 0.42, movedRatio: 0.58, perPullMetrics: [] },
+      { participantId: 'p1', displayName: 'Aria', role: 'Healer', totalDistanceYd: 840.2, avgSpeedYdPerSec: 2.2, peakSpeedYdPerSec: 8.9, stationaryRatio: 0.61, movedRatio: 0.39, perPullMetrics: [] },
+      { participantId: 'p3', displayName: 'Cind', role: 'Ranged', totalDistanceYd: 412, avgSpeedYdPerSec: 1.4, peakSpeedYdPerSec: 30.5, stationaryRatio: 0.7, movedRatio: 0.3, perPullMetrics: [] },
+    ],
+    metersByOutcome: {
+      wipesOnly: [], killsOnly: [],
+      delta: [
+        { participantId: 'p1', displayName: 'Aria', distanceDelta: 120.4, avgSpeedDelta: 0.45, peakSpeedDelta: 1.1, stationaryDelta: -0.08, wipePulls: 2, killPulls: 1 },
+        { participantId: 'p3', displayName: 'Cind', distanceDelta: null, avgSpeedDelta: null, peakSpeedDelta: null, stationaryDelta: null, wipePulls: 2, killPulls: 0 },
+      ],
+      wipeSamples: 2, killSamples: 1,
+    },
+  },
+  coverage: {
+    encounters: [{
+      encounterId: 'enc-1', encounterName: 'Vexie & the Geargrinders', difficulty: 'Mythic',
+      pulls: [{
+        pullId: 'pull-7', n: 7, outcome: 'wipe',
+        coverage: {
+          seconds: { raidPct: [100, 75, 50, 100], tankPct: [100, 100, 100, 100], flexPct: [50, 50, 25, 50], quality: [80, 70, 40, 85] },
+          summary: {
+            avgRaidPct: 81.25, avgTankPct: 100, avgFlexPct: 43.75, avgQualityScore: 68.75,
+            minRaidPct: 50, minTankPct: 100, minQualityScore: 40, timeInFragileCoverageMs: 1000,
+            snappingPoints: [{ timeMs: 2000, qualityDrop: 30, followedByDamageMs: 800 }],
+          },
+        },
+      }],
+    }],
+  },
+  segments: {
+    encounters: [{
+      encounterId: 'enc-1', encounterName: 'Vexie & the Geargrinders', difficulty: 'Mythic',
+      pulls: [{
+        pullId: 'pull-7', n: 7, outcome: 'wipe',
+        segments: [
+          { startFrameIdx: 0, endFrameIdx: 190, startMs: 0, endMs: 38000, formation: 'stacked', medianPairwiseDistanceYd: 4.2, frameCount: 190 },
+          { startFrameIdx: 190, endFrameIdx: 355, startMs: 38000, endMs: 71000, formation: 'split', medianPairwiseDistanceYd: 9.8, frameCount: 165 },
+        ],
+        phases: 'stacked 0-38s (4yd), split 38-71s (10yd)',
+      }],
+    }],
+  },
+  classify: {
+    encounters: [{
+      encounterId: 'enc-1', encounterName: 'Vexie & the Geargrinders', difficulty: 'Mythic',
+      pulls: [
+        {
+          pullId: 'pull-6', n: 6, outcome: 'wipe',
+          classification: { kind: 'called-wipe', confidence: 'high', affected: [], inflectionMs: 100000, evidence: [], calledWipePattern: 'synchronized-reset', coveragePattern: null, offender: null },
+          reason: null,
+        },
+        {
+          pullId: 'pull-7', n: 7, outcome: 'wipe',
+          classification: {
+            kind: 'subgroup', confidence: 'med', affected: ['Cind', 'Dorn'], inflectionMs: 42000,
+            evidence: [
+              { signalId: 'coverage', value: 0.45, reason: 'coverage quality dropped' },
+              { signalId: 'deaths-per-sec', value: 2, reason: 'deaths in a 3 s window' },
+            ],
+            calledWipePattern: null, coveragePattern: 'snap',
+            offender: { entityId: 'e1', displayName: 'Aria', atMs: 41000 },
+          },
+          reason: null,
+        },
+        { pullId: 'pull-8', n: 8, outcome: 'wipe', classification: null, reason: 'no replay frames' },
+      ],
+    }],
+  },
+  shape: {
+    encounters: [{
+      encounterId: 'enc-1', encounterName: 'Vexie & the Geargrinders', difficulty: 'Mythic',
+      pulls: [{
+        pullId: 'pull-7', n: 7, outcome: 'wipe',
+        // 4x4 grid: cell 5 = (col 1, row 1) dominates; three minor cells.
+        density: {
+          gridW: 4, gridH: 4,
+          cells: [0, 0, 0, 0, 0, 1, 0.2, 0, 0, 0.15, 0.1, 0, 0, 0, 0, 0],
+          totalSamples: 500, maxBucket: 200, arenaW: 100, arenaH: 80,
+        },
+      }],
+    }],
   },
   diff: {
     encounterName: 'Vexie & the Geargrinders', encounterDifficulty: 'Mythic',
@@ -168,6 +252,102 @@ describe('slice-contract compiler', () => {
     const body = serializeSlice(getObject('signals.pull@v1'),
       { scope: 'raid', rep: 'timeline', agg: 'none', time: 'whole pull' }, empty, { pullId: 'pull-7' })
     expect(body).toContain('(no replay-derived signals for this pull')
+  })
+
+  // ── phase-2 serializers ────────────────────────────────────────────────────
+
+  it('coverage rep=timeline carries the per-second series; rep=summary drops it', () => {
+    const timeline = serializeSlice(getObject('coverage.timeline@v1'),
+      { scope: 'raid', rep: 'timeline', agg: 'none', time: 'whole pull' }, NIGHT, { pullId: 'pull-7' })
+    expect(timeline).toContain('summary: raid coverage avg 81% / min 50% - tank avg 100% / min 100% - quality avg 69 / min 40 - fragile 1 s')
+    expect(timeline).toContain('snap: quality -30 at 2s, damage followed 0.8 s later')
+    expect(timeline).toContain('quality score: 80 70 40 85')
+    expect(timeline).toContain('raid coverage %: 100 75 50 100')
+    const summary = serializeSlice(getObject('coverage.timeline@v1'),
+      { scope: 'raid', rep: 'summary', agg: 'none', time: 'whole pull' }, NIGHT, { pullId: 'pull-7' })
+    expect(summary).not.toContain('quality score:')
+    expect(summary).toContain('snap: quality -30 at 2s')
+  })
+
+  it('segments serialize the phase story plus per-segment buckets', () => {
+    const body = serializeSlice(getObject('segments.formation@v1'),
+      { scope: 'raid', rep: 'phases', agg: 'none', time: 'whole pull' }, NIGHT, { pullId: 'pull-7' })
+    expect(body).toContain('phases: stacked 0-38s (4yd), split 38-71s (10yd)')
+    expect(body).toContain('stacked: 0-38s - median pairwise 4.2 yd (190 frames)')
+    expect(body).toContain('split: 38-71s - median pairwise 9.8 yd (165 frames)')
+  })
+
+  it('classify serializes the verdict; rep=verdict drops evidence; called-wipe gates coaching', () => {
+    const full = serializeSlice(getObject('classify.wipe@v1'),
+      { scope: 'raid', rep: 'verdict + evidence', agg: 'none', time: 'whole pull' }, NIGHT, { pullId: 'pull-7' })
+    expect(full).toContain('verdict: subgroup collapse, confidence med, onset ~42s')
+    expect(full).toContain('most implicated: Cind, Dorn')
+    expect(full).toContain('evidence [coverage]: coverage quality dropped (value 0.45)')
+    expect(full).toContain('coverage pattern: snap - Aria at 41s')
+    const bare = serializeSlice(getObject('classify.wipe@v1'),
+      { scope: 'raid', rep: 'verdict', agg: 'none', time: 'whole pull' }, NIGHT, { pullId: 'pull-7' })
+    expect(bare).not.toContain('evidence [')
+    expect(bare).toContain('verdict: subgroup collapse')
+    const called = serializeSlice(getObject('classify.wipe@v1'),
+      { scope: 'raid', rep: 'verdict + evidence', agg: 'none', time: 'whole pull' }, NIGHT, { pullId: 'pull-6' })
+    expect(called).toBe('CALLED WIPE (synchronized-reset) - the raid reset on purpose; do not analyze this wipe as a failure.')
+    const declined = serializeSlice(getObject('classify.wipe@v1'),
+      { scope: 'raid', rep: 'verdict + evidence', agg: 'none', time: 'whole pull' }, NIGHT, { pullId: 'pull-8' })
+    expect(declined).toBe('(not classified - no replay frames)')
+  })
+
+  it('meters rank by distance and survive the trailing-zero fmt case', () => {
+    const body = serializeSlice(getObject('meters.movement@v1'),
+      { scope: 'raid', rep: 'leaderboard', agg: 'none', time: 'whole night' }, NIGHT, { pullId: 'pull-7' })
+    // 1199.6 yd must round to 1200, not collapse to 12 (the stripped-zero regression).
+    expect(body).toContain('1. Bork (Tank): total 1200 yd - avg 3.1 yd/s - peak 12.4 yd/s - stationary 42%')
+    expect(body).toContain('3. Cind (Ranged): total 412 yd')
+  })
+
+  it('meters agg="wipes vs kills" emits per-player deltas and skips one-sided players', () => {
+    const body = serializeSlice(getObject('meters.movement@v1'),
+      { scope: 'raid', rep: 'leaderboard', agg: 'wipes vs kills', time: 'whole night' }, NIGHT, { pullId: 'pull-7' })
+    expect(body).toContain('wipes vs kills (2 wipe / 1 kill pulls), per-player wipe-minus-kill:')
+    expect(body).toContain('Aria: distance +120 yd - avg speed +0.45 yd/s - stationary -8pp')
+    expect(body).not.toContain('Cind: distance') // null delta = no kills sampled, stays silent in the delta block
+  })
+
+  it('shape serializes hotspot + concentration from the density grid', () => {
+    const body = serializeSlice(getObject('shape.density@v1'),
+      { scope: 'raid', rep: 'hotspots', agg: 'none', time: 'whole pull' }, NIGHT, { pullId: 'pull-7' })
+    expect(body).toContain('arena ~100x80 yd, 4x4 occupancy grid, 500 position samples')
+    expect(body).toContain('hotspot: cell centered (38, 30) yd held the most raid-presence')
+    expect(body).toContain('concentration: half of all standing time in 1 of 4 occupied cells (25%)')
+  })
+
+  it('phase-2 slices serialize explicit absence when their artifacts are missing', () => {
+    const empty = { signals: null, players: null, affinity: null, diff: null, coverage: null, segments: null, classify: null, shape: null }
+    const cases = [
+      ['coverage.timeline@v1', '(no coverage quality model for this pull'],
+      ['segments.formation@v1', '(no formation segments for this pull'],
+      ['classify.wipe@v1', '(no wipe classification for this pull'],
+      ['meters.movement@v1', '(no movement meters for this night'],
+      ['shape.density@v1', '(no density grid for this pull'],
+    ]
+    for (const [id, expected] of cases) {
+      const entry = getObject(id)
+      const body = serializeSlice(entry, { ...entry.sliceDefaults }, empty, { pullId: 'pull-7' })
+      expect(body, id).toContain(expected)
+    }
+  })
+
+  it('a nine-slice contract compiles with a stable digest', () => {
+    const all = [
+      slice('signals.pull@v1'), slice('players.pull@v1'), slice('affinity.night@v1'),
+      slice('diff.pulls@v1', {}, { comparePullId: 'pull-6' }),
+      slice('coverage.timeline@v1'), slice('segments.formation@v1'), slice('classify.wipe@v1'),
+      slice('meters.movement@v1'), slice('shape.density@v1'),
+    ]
+    const a = buildContract({ ...FRAME, slices: all })
+    const b = buildContract({ ...FRAME, slices: [...all].reverse() })
+    expect(a.xml).toContain('slices="9"')
+    expect((a.xml.match(/<slice /g) || []).length).toBe(9)
+    expect(a.digest).toBe(b.digest)
   })
 
   it('escapes attribute values and payload bytes', () => {

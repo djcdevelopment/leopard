@@ -29,7 +29,9 @@ const DEATH_WINDOW_SEC = 10
 function fmt(v, digits = 2) {
   if (v === null || v === undefined || Number.isNaN(v)) return '-'
   const n = Number(v)
-  return Number.isInteger(n) ? String(n) : n.toFixed(digits).replace(/0+$/, '').replace(/\.$/, '')
+  // Strip trailing zeros only after a decimal point — a bare /0+$/ would turn a non-integer
+  // that ROUNDS to a trailing zero into garbage ("39.6" at digits=0 → "40" → "4").
+  return Number.isInteger(n) ? String(n) : n.toFixed(digits).replace(/(\.\d*?)0+$/, '$1').replace(/\.$/, '')
 }
 
 function downsample(values, keep) {
@@ -148,6 +150,108 @@ function serializeDiff(nightData, pullId, extra) {
   return lines.join('\n')
 }
 
+function serializeCoverage(nightData, pullId, cfg) {
+  const hit = findPull(nightData.coverage, pullId)
+  const c = hit?.pull?.coverage
+  if (!c) return '(no coverage quality model for this pull - needs replay frames)'
+  const s = c.summary
+  const lines = []
+  lines.push(`summary: raid coverage avg ${fmt(s.avgRaidPct, 0)}% / min ${fmt(s.minRaidPct, 0)}% - tank avg ${fmt(s.avgTankPct, 0)}% / min ${fmt(s.minTankPct, 0)}% - quality avg ${fmt(s.avgQualityScore, 0)} / min ${fmt(s.minQualityScore, 0)} - fragile ${fmt(s.timeInFragileCoverageMs / 1000, 0)} s`)
+  for (const snap of s.snappingPoints || []) {
+    const dmg = snap.followedByDamageMs != null ? `, damage followed ${fmt(snap.followedByDamageMs / 1000, 1)} s later` : ', no damage followed'
+    lines.push(`snap: quality -${fmt(snap.qualityDrop, 0)} at ${fmt(snap.timeMs / 1000, 0)}s${dmg}`)
+  }
+  if ((s.snappingPoints || []).length === 0) lines.push('snaps: none detected')
+  if (cfg.rep === 'timeline') {
+    const sec = c.seconds || {}
+    for (const [key, label] of [['quality', 'quality score'], ['raidPct', 'raid coverage %']]) {
+      const samples = downsample(sec[key] || []).map((v) => fmt(v, 0))
+      if (samples.length) lines.push(`${label}: ${samples.join(' ')}`)
+    }
+  }
+  lines.push('(quality = 100 x (0.5 healer-centrality + 0.5 (1 - edge-proximity)); fragile = raid coverage below 70%)')
+  return lines.join('\n')
+}
+
+function serializeSegments(nightData, pullId) {
+  const hit = findPull(nightData.segments, pullId)
+  const p = hit?.pull
+  if (!p || !p.segments) return '(no formation segments for this pull - needs replay frames)'
+  if (p.segments.length === 0) return '(no stable formation periods detected - the pull may be too short)'
+  const lines = []
+  if (p.phases) lines.push(`phases: ${p.phases}`)
+  for (const s of p.segments)
+    lines.push(`${s.formation}: ${fmt(s.startMs / 1000, 0)}-${fmt(s.endMs / 1000, 0)}s - median pairwise ${fmt(s.medianPairwiseDistanceYd, 1)} yd (${s.frameCount} frames)`)
+  lines.push('(stacked < 5 yd median pairwise, split 5-15 yd, dispersed >= 15 yd; boundaries from movement change-points)')
+  return lines.join('\n')
+}
+
+function serializeClassify(nightData, pullId, cfg) {
+  const hit = findPull(nightData.classify, pullId)
+  const p = hit?.pull
+  if (!p) return '(no wipe classification for this pull - re-parse in Setup)'
+  const cls = p.classification
+  if (!cls) return `(not classified - ${p.reason || 'no verdict'})`
+  if (cls.kind === 'called-wipe')
+    return `CALLED WIPE (${cls.calledWipePattern}) - the raid reset on purpose; do not analyze this wipe as a failure.`
+  const lines = []
+  lines.push(`verdict: ${cls.kind} collapse, confidence ${cls.confidence}, onset ~${fmt(cls.inflectionMs / 1000, 0)}s`)
+  if ((cls.affected || []).length > 0 && cls.kind !== 'systemic')
+    lines.push(`most implicated: ${cls.affected.join(', ')}`)
+  if (cfg.rep !== 'verdict') {
+    for (const e of cls.evidence || []) lines.push(`evidence [${e.signalId}]: ${e.reason} (value ${fmt(e.value)})`)
+    if (cls.coveragePattern) lines.push(`coverage pattern: ${cls.coveragePattern}${cls.offender ? ` - ${cls.offender.displayName} at ${fmt(cls.offender.atMs / 1000, 0)}s` : ''}`)
+  }
+  lines.push('(deterministic rule tree - outcome/duration/death gates, consensus inflection, z-score attribution; no probabilities)')
+  return lines.join('\n')
+}
+
+function serializeMeters(nightData, cfg) {
+  const meters = nightData.affinity?.meters
+  if (!meters || meters.length === 0) return '(no movement meters for this night - needs replay frames)'
+  const ranked = [...meters].sort((a, b) => b.totalDistanceYd - a.totalDistanceYd)
+  const rows = cfg.scope === 'top 5' ? ranked.slice(0, 5) : ranked
+  const lines = rows.map((m, i) =>
+    `${i + 1}. ${m.displayName} (${m.role || 'Unknown'}): total ${fmt(m.totalDistanceYd, 0)} yd - avg ${fmt(m.avgSpeedYdPerSec, 1)} yd/s - peak ${fmt(m.peakSpeedYdPerSec, 1)} yd/s - stationary ${fmt(m.stationaryRatio * 100, 0)}%`)
+  if (cfg.scope === 'top 5' && ranked.length > 5) lines.push(`(${ranked.length - 5} more players omitted by scope=top 5)`)
+  if (cfg.agg === 'wipes vs kills') {
+    const byOutcome = nightData.affinity?.metersByOutcome
+    if (!byOutcome || byOutcome.killSamples === 0 || byOutcome.wipeSamples === 0) {
+      lines.push(`wipes vs kills: no contrast this night (${byOutcome ? `${byOutcome.wipeSamples} wipe / ${byOutcome.killSamples} kill pulls` : 'partition unavailable'})`)
+    } else {
+      lines.push(`wipes vs kills (${byOutcome.wipeSamples} wipe / ${byOutcome.killSamples} kill pulls), per-player wipe-minus-kill:`)
+      for (const d of byOutcome.delta || []) {
+        if (d.distanceDelta == null) continue
+        lines.push(`${d.displayName}: distance ${d.distanceDelta > 0 ? '+' : ''}${fmt(d.distanceDelta, 0)} yd - avg speed ${d.avgSpeedDelta > 0 ? '+' : ''}${fmt(d.avgSpeedDelta, 2)} yd/s - stationary ${d.stationaryDelta > 0 ? '+' : ''}${fmt(d.stationaryDelta * 100, 0)}pp`)
+      }
+    }
+  }
+  lines.push('(whole-night meters across every pull with frames; peak speed flags blinks/teleports too)')
+  return lines.join('\n')
+}
+
+function serializeShape(nightData, pullId) {
+  const hit = findPull(nightData.shape, pullId)
+  const d = hit?.pull?.density
+  if (!d || !(d.cells || []).length) return '(no density grid for this pull - needs replay frames)'
+  const { gridW, gridH, cells, arenaW, arenaH, totalSamples } = d
+  const ranked = cells.map((v, i) => ({ v, i })).filter((c) => c.v > 0).sort((a, b) => b.v - a.v)
+  if (ranked.length === 0 || !totalSamples) return '(density grid is empty for this pull)'
+  const mass = ranked.reduce((s, c) => s + c.v, 0)
+  let acc = 0
+  let half = 0
+  for (const c of ranked) { acc += c.v; half++; if (acc >= mass / 2) break }
+  const top = ranked[0]
+  const cx = ((top.i % gridW) + 0.5) / gridW * arenaW
+  const cy = (Math.floor(top.i / gridW) + 0.5) / gridH * arenaH
+  const lines = []
+  lines.push(`arena ~${fmt(arenaW, 0)}x${fmt(arenaH, 0)} yd, ${gridW}x${gridH} occupancy grid, ${totalSamples} position samples`)
+  lines.push(`hotspot: cell centered (${fmt(cx, 0)}, ${fmt(cy, 0)}) yd held the most raid-presence`)
+  lines.push(`concentration: half of all standing time in ${half} of ${ranked.length} occupied cells (${fmt(half / ranked.length * 100, 0)}%)`)
+  lines.push('(the long-exposure of the pull - where the raid actually stood, not where it should have)')
+  return lines.join('\n')
+}
+
 // One slice's body text, given its registry entry + slice config + fetched night data.
 export function serializeSlice(entry, cfg, nightData, pullRef) {
   switch (entry.api) {
@@ -155,6 +259,11 @@ export function serializeSlice(entry, cfg, nightData, pullRef) {
     case 'players': return serializePlayers(nightData, pullRef.pullId, cfg)
     case 'affinity': return serializeAffinity(nightData, cfg)
     case 'diff': return serializeDiff(nightData, pullRef.pullId, pullRef.extra)
+    case 'coverage': return serializeCoverage(nightData, pullRef.pullId, cfg)
+    case 'segments': return serializeSegments(nightData, pullRef.pullId)
+    case 'classify': return serializeClassify(nightData, pullRef.pullId, cfg)
+    case 'meters': return serializeMeters(nightData, cfg)
+    case 'shape': return serializeShape(nightData, pullRef.pullId)
     default: return '(this knowledge object is not wired yet)'
   }
 }

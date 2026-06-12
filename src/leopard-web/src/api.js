@@ -85,6 +85,33 @@ export async function getDiff(name, a, b) {
   return r.json()
 }
 
+// Coverage — per-pull healing-coverage quality (per-second series + summary + snap markers).
+// 404 => parsed before Coverage existed — re-parse in Setup.
+export async function getCoverage(name) {
+  const r = await fetch(`${A}/coverage?name=${encodeURIComponent(name)}`)
+  if (r.status === 404) return null
+  if (!r.ok) throw new Error(`coverage HTTP ${r.status}`)
+  return r.json()
+}
+
+// Segments — per-pull formation phases (stacked / split / dispersed change-points).
+// 404 => parsed before Segments existed — re-parse in Setup.
+export async function getSegments(name) {
+  const r = await fetch(`${A}/segments?name=${encodeURIComponent(name)}`)
+  if (r.status === 404) return null
+  if (!r.ok) throw new Error(`segments HTTP ${r.status}`)
+  return r.json()
+}
+
+// Classify — per-pull wipe verdicts from the deterministic rule tree (kind + confidence +
+// evidence + called-wipe gate). 404 => parsed before Classify existed — re-parse in Setup.
+export async function getClassify(name) {
+  const r = await fetch(`${A}/classify?name=${encodeURIComponent(name)}`)
+  if (r.status === 404) return null
+  if (!r.ok) throw new Error(`classify HTTP ${r.status}`)
+  return r.json()
+}
+
 // Career-arc grounding — one boss's all-time story as exact-figures text (the zoom above the
 // per-night box score). Mirrors getBoxscore. 404 => no such career.
 export async function getCareerSummary(careerId) {

@@ -1,6 +1,9 @@
 import React from 'react'
 import { findPullIn } from './contract.js'
-import { SignalsPreview, PlayersPreview, AffinityPreview, DiffPreview } from './ExplorerPreviews.jsx'
+import {
+  SignalsPreview, PlayersPreview, AffinityPreview, DiffPreview,
+  CoveragePreview, SegmentsPreview, ClassifyPreview, MetersPreview, ShapePreview,
+} from './ExplorerPreviews.jsx'
 
 // The right rail: Properties — shape the selected slice. Metadata rows come straight from
 // the knowledge registry; the SLICE dropdowns are bound to the contract entry (every change
@@ -25,6 +28,11 @@ const REAL_KEYS = {
   'players.pull@v1': ['scope'],
   'affinity.night@v1': ['rep'],
   'diff.pulls@v1': [],
+  'coverage.timeline@v1': ['rep'],
+  'segments.formation@v1': [],
+  'classify.wipe@v1': ['rep'],
+  'meters.movement@v1': ['scope', 'agg'],
+  'shape.density@v1': [],
 }
 
 export default function ExplorerProperties({
@@ -48,6 +56,11 @@ export default function ExplorerProperties({
     if (entry.api === 'players') return <PlayersPreview scores={findPullIn(nightData.players, pull?.pullId)?.scores} />
     if (entry.api === 'affinity') return <AffinityPreview affinity={nightData.affinity} />
     if (entry.api === 'diff') return <DiffPreview diff={nightData.diff} />
+    if (entry.api === 'coverage') return <CoveragePreview coverage={findPullIn(nightData.coverage, pull?.pullId)?.coverage} />
+    if (entry.api === 'segments') return <SegmentsPreview pull={findPullIn(nightData.segments, pull?.pullId)} />
+    if (entry.api === 'classify') return <ClassifyPreview pull={findPullIn(nightData.classify, pull?.pullId)} />
+    if (entry.api === 'meters') return <MetersPreview meters={nightData.affinity?.meters} />
+    if (entry.api === 'shape') return <ShapePreview density={findPullIn(nightData.shape, pull?.pullId)?.density} />
     return <p className="muted small">No preview until this object is wired (phase 2).</p>
   }
 
